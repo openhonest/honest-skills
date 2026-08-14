@@ -1,0 +1,23 @@
+# Agent and editor state. None of this belongs in a public repository, and
+# CLAUDE.md in particular carries private operating instructions.
+.claude/
+CLAUDE.md
+AGENTS.md
+.cursor/
+.aider*
+.vscode/
+.idea/
+
+# Internal planning. Strategy notes live outside the repo on purpose: a plan
+# that describes how to satisfy another maintainer's acceptance bar does not
+# belong in the artifact submitted to that maintainer.
+docs/REFACTOR-PLAN.md
+docs/*-plan.md
+docs/internal/
+
+# OS and language noise
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/

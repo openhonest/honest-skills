@@ -1,0 +1,38 @@
+{
+  "name": "honest-skills",
+  "owner": {
+    "name": "Open Honest Foundation",
+    "url": "https://openhonest.org"
+  },
+  "metadata": {
+    "description": "Skills that make an AI agent report what it cannot do. root-cause forbids a causal claim without evidence and recurses to a structural cause. sitrep forces the finding into the first sentence, bad news above good news, stated confidence, and a named gap for anything unverified. Ships clarity.py, which scores a draft against the standard so the rule is a check rather than advice.",
+    "version": "0.1.0",
+    "repository": "https://github.com/openhonest/honest-skills"
+  },
+  "plugins": [
+    {
+      "name": "honest-skills",
+      "description": "Evidence discipline for AI agents: no unproven causal claims, no buried bad news, no unstated confidence.",
+      "version": "0.1.0",
+      "source": "./",
+      "author": {
+        "name": "Adam Z. Wasserman",
+        "url": "https://adamzacharywasserman.com"
+      },
+      "license": "Apache-2.0",
+      "homepage": "https://openhonest.org",
+      "keywords": [
+        "root-cause-analysis",
+        "incident-response",
+        "technical-writing",
+        "evidence",
+        "calibration",
+        "agent-discipline"
+      ],
+      "skills": [
+        "./skills/root-cause",
+        "./skills/sitrep"
+      ]
+    }
+  ]
+}
