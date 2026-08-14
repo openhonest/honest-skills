@@ -58,8 +58,44 @@ That output is real. It is the report described above, and the first-sentence
 line is what identified the fault in seconds.
 
 It also flags stray em dashes, hedging adverbs, intensifiers, stacked headings
-and sentences over twenty words. It exits 1 when the index leaves the band, so
-it can gate a hook.
+and sentences over twenty words.
+
+For tooling, `--json` emits the same measurement as a result object:
+
+```bash
+uv run tools/clarity.py --json draft.md
+```
+
+```json
+{
+  "schema": 1,
+  "verdict": "in_band",
+  "exit": 0,
+  "index": {"value": 23.1, "aim": 30, "band": [20, 40]},
+  "checks": {
+    "first_sentence": {"verdict": "unassessed",
+                       "text": "BLUF: the homepage carried no links.",
+                       "reason": "a machine cannot tell a buried lead from a deliberate one"},
+    "headings": {"verdict": "fail", "count": 8, "limit": 2, "found": ["..."]},
+    "em_dashes": {"verdict": "pass", "count": 0}
+  }
+}
+```
+
+Three things about that format are deliberate.
+
+Every check is present whether it passed or failed. Dropping a passing check
+would save bytes and cost a consumer the ability to tell "passed" from "never
+ran", which is the failure this project exists to name.
+
+`first_sentence` returns `unassessed` with a reason. The checker prints your
+opening line back because that is all it can honestly do; a machine cannot tell
+a buried lead from a deliberate one. Most linters emit pass or fail only, so a
+rule they cannot judge gets dropped or faked.
+
+Exit codes separate the two ways of failing. `0` in band, `1` out of band, `2`
+the file could not be read. A hook that collapsed those would hide a broken
+setup behind a writing complaint.
 
 ## Running the tests, and why the venv matters
 

@@ -3,27 +3,36 @@
 anyone remembering to.
 
     uv run tools/clarity.py draft.md
+    uv run tools/clarity.py --json draft.md
     pbpaste | uv run tools/clarity.py
 
 Reports the clarity index (DA Pam 600-67, para 4-3) and every mechanical defect
-the standard names: stray em dashes, banned AI tells, hedging adverbs,
+the standard names: stray em dashes, deferring phrases, hedging adverbs,
 intensifiers, and sentences too long to read once. Exits 1 when the index falls
 outside 20 to 40, so it can gate a hook.
 
 Stdlib only, on purpose. This runs before sending a message, and a tool that
 needs an install is a tool that gets skipped at the moment it is wanted.
+
+analyse() is a pure function returning a result dict; the renderers read that
+dict and print. Nothing computes while it prints, which is what makes the two
+output formats one measurement rather than two implementations of it.
 """
 from __future__ import annotations
 
+import json
 import re
 import sys
 
 VOWELS = "aeiouy"
+BAND = (20, 40)
+AIM = 30
+SENTENCE_LIMIT = 20
+HEADING_LIMIT = 2
 
 # Adverbs that assert a confidence the evidence has not earned. Named separately
 # from intensifiers because this group is a truthfulness problem, not a style
-# one: an account that gives an award for not overclaiming cannot write
-# "clearly" in its own posts.
+# one: a project that judges others for overclaiming cannot write "clearly".
 HEDGES = ("clearly", "obviously", "certainly", "undoubtedly", "arguably",
           "essentially", "basically", "fundamentally", "notably", "importantly")
 INTENSIFIERS = ("very", "really", "quite", "extremely", "incredibly",
@@ -34,6 +43,15 @@ TELLS = (r"the (honest|useful|interesting|real|hard|important|key) part\b",
          r"\bit'?s not (just )?about\b", r"\bnot only\b.{0,40}\bbut also\b")
 BANNED_WORDS = (r"\bmove[sd]?\b", r"\bmoving\b", r"\bsharp(ly|er|en)?\b",
                 r"\brare\b")
+
+WORD_CLASSES = (
+    ("hedges", [rf"\b{h}\b" for h in HEDGES]),
+    ("intensifiers", [rf"\b{i}\b" for i in INTENSIFIERS]),
+    ("tells", list(TELLS)),
+    ("banned_words", list(BANNED_WORDS)),
+)
+LABELS = {"hedges": "HEDGES", "intensifiers": "INTENSIFIERS",
+          "tells": "AI TELLS", "banned_words": "BANNED WORDS"}
 
 
 def syllables(word: str) -> int:
@@ -52,16 +70,17 @@ def syllables(word: str) -> int:
 def strip_furniture(text: str) -> str:
     """Drop what the index should not judge.
 
-    Code blocks, tables and URLs are not prose. Counting them drags the average
-    sentence length and the long-word share toward noise, and a report full of
-    measurements would score as unreadable for containing its evidence.
+    Code blocks, tables, headings and URLs are not prose. Counting them drags
+    the average sentence length and the long-word share toward noise, and a
+    report full of measurements would score as unreadable for carrying its own
+    evidence.
     """
     text = re.sub(r"```[\s\S]*?```", " ", text)
     # Headings are furniture too. Left in, "## Length" counts as a one-word
     # sentence and drags the average down, so a document with many headings
     # scores falsely low and reads as too abrupt when its prose is fine. Found
     # by running this tool on the skill file that ships beside it. Heading COUNT
-    # is still checked separately, in main().
+    # is still checked, separately, in analyse().
     text = re.sub(r"^\s*#{1,6} .*$", " ", text, flags=re.M)
     text = re.sub(r"^\s*\|.*\|\s*$", " ", text, flags=re.M)
     text = re.sub(r"https?://\S+", " ", text)
@@ -78,64 +97,153 @@ def scan(pattern: str, text: str) -> list[str]:
     return [m.group(0) for m in re.finditer(pattern, text, re.I)]
 
 
-def main() -> int:
-    raw = open(sys.argv[1]).read() if len(sys.argv) > 1 else sys.stdin.read()
+def words_in(text: str) -> list[str]:
+    return re.findall(r"[A-Za-z][A-Za-z'\-]*", text)
+
+
+def analyse(raw: str, source: str = "-") -> dict:
+    """Measure a draft. Pure: no printing, no exit, no file access.
+
+    Every check appears in the result whether it passed or failed. Omitting a
+    passing check saves bytes and costs a consumer the ability to tell "passed"
+    from "never ran", which is the failure this project exists to name.
+    """
     prose = strip_furniture(raw)
     sents = sentences_of(prose)
-    words = re.findall(r"[A-Za-z][A-Za-z'\-]*", prose)
+    words = words_in(prose)
     if not sents or not words:
-        print("nothing to measure")
-        return 0
+        return {"schema": 1, "source": source, "verdict": "nothing_to_measure",
+                "exit": 0, "index": None,
+                "counts": {"sentences": 0, "words": 0, "long_words": 0},
+                "measures": {}, "checks": {}}
 
     long_words = [w for w in words if syllables(w) >= 3]
     asl = len(words) / len(sents)
     pct = len(long_words) / len(words) * 100
     index = asl + pct
+    verdict = ("too_abrupt" if index < BAND[0] else
+               "too_hard" if index > BAND[1] else "in_band")
 
-    verdict = ("TOO ABRUPT, you have cut meaning out" if index < 20 else
-               "TOO HARD to read in one pass" if index > 40 else "in band")
-    print(f"clarity index  {index:5.1f}   aim 30, band 20-40   {verdict}")
-    print(f"  sentences    {len(sents):5}")
-    print(f"  avg sentence {asl:5.1f} words     target 15")
-    print(f"  long words   {pct:5.1f}%          target 15%")
-
-    # Structure is what gets broken, so it is checked first and loudest.
-    heads = re.findall(r"^#{1,6} .+$", raw, flags=re.M)
-    if len(heads) > 2:
-        print(f"\nSTRUCTURE  {len(heads)} headings. More than two on one change "
-              f"is performing thoroughness.")
-        for h in heads:
-            print(f"    {h.strip()[:70]}")
-
-    first = sents[0]
-    print(f"\nFIRST SENTENCE  {first[:88]}")
-    print("    Does it carry the recommendation or the finding? If not, cut above it.")
-
-    longs = [s for s in sents
-             if len(re.findall(r"[A-Za-z][A-Za-z'\-]*", s)) > 20]
-    if longs:
-        print(f"\nOVER 20 WORDS  {len(longs)}")
-        for s in longs[:5]:
-            n = len(re.findall(r"[A-Za-z][A-Za-z'\-]*", s))
-            print(f"    {n:3}  {s[:80]}")
-
-    # A pair of em dashes is sanctioned; an odd count means one is stray.
+    heads = [h.strip() for h in re.findall(r"^#{1,6} .+$", raw, flags=re.M)]
+    longs = [{"words": len(words_in(s)), "text": s}
+             for s in sents if len(words_in(s)) > SENTENCE_LIMIT]
     dashes = raw.count("—")
-    if dashes:
-        state = "stray, fix it" if dashes % 2 else "check they are paired"
-        print(f"\nEM DASHES  {dashes}   {state}")
 
-    for label, pats in (("HEDGES", [rf"\b{h}\b" for h in HEDGES]),
-                        ("INTENSIFIERS", [rf"\b{i}\b" for i in INTENSIFIERS]),
-                        ("AI TELLS", list(TELLS)),
-                        ("BANNED WORDS", list(BANNED_WORDS))):
-        hits: list[str] = []
-        for p in pats:
-            hits += scan(p, prose)
-        if hits:
-            print(f"\n{label}  {len(hits)}   {', '.join(sorted(set(hits))[:8])}")
+    checks = {
+        # The one check this tool cannot make. It prints the sentence back and
+        # says so, rather than dropping the rule or inventing a verdict for it.
+        "first_sentence": {
+            "verdict": "unassessed",
+            "text": sents[0],
+            "reason": "a machine cannot tell a buried lead from a deliberate one",
+        },
+        "headings": {
+            "verdict": "fail" if len(heads) > HEADING_LIMIT else "pass",
+            "count": len(heads), "limit": HEADING_LIMIT, "found": heads,
+        },
+        "long_sentences": {
+            "verdict": "fail" if longs else "pass",
+            "count": len(longs), "limit": SENTENCE_LIMIT, "found": longs,
+        },
+        # A pair of em dashes is sanctioned; an odd count means one is stray.
+        "em_dashes": {
+            "verdict": "fail" if dashes % 2 else "pass",
+            "count": dashes,
+            "reason": ("odd count, so one is stray" if dashes % 2
+                       else "even count, check they are paired"),
+        },
+    }
+    for key, pats in WORD_CLASSES:
+        hits = [h for p in pats for h in scan(p, prose)]
+        checks[key] = {"verdict": "fail" if hits else "pass",
+                       "count": len(hits), "found": sorted(set(hits))}
 
-    return 0 if 20 <= index <= 40 else 1
+    return {
+        "schema": 1,
+        "source": source,
+        "verdict": verdict,
+        "exit": 0 if verdict == "in_band" else 1,
+        "index": {"value": round(index, 1), "aim": AIM, "band": list(BAND)},
+        "counts": {"sentences": len(sents), "words": len(words),
+                   "long_words": len(long_words)},
+        "measures": {"avg_sentence_words": round(asl, 1),
+                     "long_word_pct": round(pct, 1)},
+        "checks": checks,
+    }
+
+
+def render_text(r: dict) -> str:
+    if r["verdict"] == "nothing_to_measure":
+        return "nothing to measure"
+    said = {"too_abrupt": "TOO ABRUPT, you have cut meaning out",
+            "too_hard": "TOO HARD to read in one pass",
+            "in_band": "in band"}[r["verdict"]]
+    out = [f"clarity index  {r['index']['value']:5.1f}   "
+           f"aim {AIM}, band {BAND[0]}-{BAND[1]}   {said}",
+           f"  sentences    {r['counts']['sentences']:5}",
+           f"  avg sentence {r['measures']['avg_sentence_words']:5.1f} words     target 15",
+           f"  long words   {r['measures']['long_word_pct']:5.1f}%          target 15%"]
+
+    c = r["checks"]
+    # Structure is what gets broken, so it is reported first and loudest.
+    if c["headings"]["verdict"] == "fail":
+        out.append(f"\nSTRUCTURE  {c['headings']['count']} headings. More than "
+                   f"{HEADING_LIMIT} on one change is performing thoroughness.")
+        out += [f"    {h[:70]}" for h in c["headings"]["found"]]
+
+    out.append(f"\nFIRST SENTENCE  {c['first_sentence']['text'][:88]}")
+    out.append("    Does it carry the recommendation or the finding? If not, cut above it.")
+
+    if c["long_sentences"]["verdict"] == "fail":
+        out.append(f"\nOVER {SENTENCE_LIMIT} WORDS  {c['long_sentences']['count']}")
+        out += [f"    {s['words']:3}  {s['text'][:80]}"
+                for s in c["long_sentences"]["found"][:5]]
+
+    if c["em_dashes"]["count"]:
+        state = ("stray, fix it" if c["em_dashes"]["verdict"] == "fail"
+                 else "check they are paired")
+        out.append(f"\nEM DASHES  {c['em_dashes']['count']}   {state}")
+
+    for key, _ in WORD_CLASSES:
+        if c[key]["verdict"] == "fail":
+            out.append(f"\n{LABELS[key]}  {c[key]['count']}   "
+                       f"{', '.join(c[key]['found'][:8])}")
+    return "\n".join(out)
+
+
+def read_source(argv: list[str]) -> tuple[str | None, str, str | None]:
+    """Return (text, source, error). Never raises on a bad path.
+
+    A traceback is a fine way to fail at a prompt and a poor way to fail inside
+    a hook, where the calling tool sees a crash instead of a verdict.
+    """
+    paths = [a for a in argv[1:] if not a.startswith("-")]
+    if not paths:
+        return sys.stdin.read(), "-", None
+    try:
+        with open(paths[0]) as fh:
+            return fh.read(), paths[0], None
+    except OSError as e:
+        return None, paths[0], f"{type(e).__name__}: {e}"
+
+
+def main() -> int:
+    as_json = "--json" in sys.argv[1:]
+    text, source, error = read_source(sys.argv)
+    if error is not None:
+        # Exit 2, not 1. A hook must be able to tell "this draft is bad" from
+        # "I could not read the draft"; collapsing them hides a broken setup
+        # behind a writing complaint.
+        result = {"schema": 1, "source": source, "verdict": "unreadable",
+                  "exit": 2, "error": error, "index": None,
+                  "counts": {}, "measures": {}, "checks": {}}
+        print(json.dumps(result, indent=2) if as_json
+              else f"cannot read {source}: {error}")
+        return 2
+
+    result = analyse(text, source)
+    print(json.dumps(result, indent=2) if as_json else render_text(result))
+    return result["exit"]
 
 
 # The tests in tests/test_clarity.py DO exercise this, by running the script

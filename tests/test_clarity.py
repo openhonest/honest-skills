@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import json
 import subprocess
 import sys
 from contextlib import redirect_stdout
@@ -248,3 +249,148 @@ def test_headings_do_not_count_as_sentences(tmp_path):
     headed.write_text("## One\n\n" + prose + "\n\n## Two\n\n## Three\n")
     index = lambda f: float(run(f.read_text(), tmp_path)[1].splitlines()[0].split()[2])
     assert index(bare) == index(headed)
+
+
+# --------------------------------------------------------- analyse() is pure
+IN_BAND = ("Every crawler reached the homepage and stopped there, because the "
+           "markup contained no links at all. I added twenty canonical links, "
+           "and the deployment completed in eighty seconds.")
+
+
+def test_analyse_returns_a_result_and_prints_nothing(capsys):
+    r = clarity.analyse(IN_BAND, "draft.md")
+    assert capsys.readouterr().out == ""
+    assert r["verdict"] == "in_band"
+    assert r["source"] == "draft.md"
+    assert r["schema"] == 1
+
+
+def test_analyse_is_deterministic():
+    assert clarity.analyse(IN_BAND) == clarity.analyse(IN_BAND)
+
+
+def test_every_check_is_present_even_when_it_passes():
+    """Omitting a passing check costs a consumer the ability to tell 'passed'
+    from 'never ran'. That distinction is the whole point of the format."""
+    checks = clarity.analyse(IN_BAND)["checks"]
+    expected = {"first_sentence", "headings", "long_sentences", "em_dashes",
+                "hedges", "intensifiers", "tells", "banned_words"}
+    assert set(checks) == expected
+    assert all("verdict" in c for c in checks.values())
+
+
+def test_first_sentence_is_unassessed_with_a_stated_reason():
+    c = clarity.analyse(IN_BAND)["checks"]["first_sentence"]
+    assert c["verdict"] == "unassessed"
+    assert c["reason"]
+    assert c["text"].startswith("Every crawler")
+
+
+def test_exit_code_is_carried_in_the_payload():
+    assert clarity.analyse(IN_BAND)["exit"] == 0
+    assert clarity.analyse("It ran. It broke. I fixed it.")["exit"] == 1
+
+
+def test_nothing_to_measure_is_a_verdict_not_an_error():
+    r = clarity.analyse("\n\n")
+    assert r["verdict"] == "nothing_to_measure"
+    assert r["exit"] == 0
+    assert r["index"] is None
+
+
+def test_failing_checks_carry_what_was_found():
+    r = clarity.analyse("It is clearly and obviously very good indeed today.")
+    assert r["checks"]["hedges"]["verdict"] == "fail"
+    assert "clearly" in r["checks"]["hedges"]["found"]
+    assert r["checks"]["intensifiers"]["found"] == ["very"]
+
+
+# ------------------------------------------------------------------- --json
+def test_json_output_parses_and_matches_analyse(tmp_path):
+    f = tmp_path / "d.md"
+    f.write_text(IN_BAND)
+    r = subprocess.run([sys.executable, str(ROOT / "tools" / "clarity.py"), "--json", str(f)],
+                       capture_output=True, text=True)
+    assert r.returncode == 0
+    payload = json.loads(r.stdout)
+    assert payload["verdict"] == "in_band"
+    assert payload == clarity.analyse(IN_BAND, str(f))
+
+
+def test_json_is_exclusive_of_the_human_report(tmp_path):
+    """A hook parsing stdout must not have to skip a text report first."""
+    f = tmp_path / "d.md"
+    f.write_text(IN_BAND)
+    r = subprocess.run([sys.executable, str(ROOT / "tools" / "clarity.py"), "--json", str(f)],
+                       capture_output=True, text=True)
+    assert "clarity index" not in r.stdout
+    json.loads(r.stdout)
+
+
+def test_json_exit_code_matches_the_payload(tmp_path):
+    f = tmp_path / "bad.md"
+    f.write_text("It ran. It broke. I fixed it. It runs.")
+    r = subprocess.run([sys.executable, str(ROOT / "tools" / "clarity.py"), "--json", str(f)],
+                       capture_output=True, text=True)
+    assert r.returncode == 1
+    assert json.loads(r.stdout)["exit"] == 1
+
+
+# ------------------------------------------------------- unreadable sources
+def test_unreadable_file_exits_two_not_one(tmp_path):
+    """A hook must tell 'this draft is bad' from 'I could not read the draft'.
+    Collapsing them hides a broken setup behind a writing complaint."""
+    missing = tmp_path / "nope.md"
+    r = subprocess.run([sys.executable, str(ROOT / "tools" / "clarity.py"), str(missing)],
+                       capture_output=True, text=True)
+    assert r.returncode == 2
+    assert "cannot read" in r.stdout
+
+
+def test_unreadable_file_in_json_says_why(tmp_path):
+    r = subprocess.run([sys.executable, str(ROOT / "tools" / "clarity.py"),
+                        "--json", str(tmp_path / "nope.md")],
+                       capture_output=True, text=True)
+    assert r.returncode == 2
+    payload = json.loads(r.stdout)
+    assert payload["verdict"] == "unreadable"
+    assert payload["exit"] == 2
+    assert "FileNotFoundError" in payload["error"]
+
+
+def test_read_source_falls_back_to_stdin_when_only_flags_given(monkeypatch):
+    monkeypatch.setattr(sys, "stdin", io.StringIO("some prose here"))
+    text, source, error = clarity.read_source(["clarity.py", "--json"])
+    assert (text, source, error) == ("some prose here", "-", None)
+
+
+# The subprocess tests above prove the shell contract but run in a child that
+# in-process coverage cannot observe. These exercise the same paths in-process
+# so the error branch is measured rather than merely believed.
+def test_read_source_reports_a_missing_file_without_raising(tmp_path):
+    text, source, error = clarity.read_source(["clarity.py", str(tmp_path / "gone.md")])
+    assert text is None
+    assert source.endswith("gone.md")
+    assert "FileNotFoundError" in error
+
+
+def test_main_in_process_returns_two_for_an_unreadable_file(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(sys, "argv", ["clarity.py", str(tmp_path / "gone.md")])
+    assert clarity.main() == 2
+    assert "cannot read" in capsys.readouterr().out
+
+
+def test_main_in_process_json_error_payload(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(sys, "argv", ["clarity.py", "--json", str(tmp_path / "gone.md")])
+    assert clarity.main() == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["verdict"] == "unreadable"
+    assert payload["exit"] == 2
+
+
+def test_main_in_process_json_success(monkeypatch, capsys, tmp_path):
+    f = tmp_path / "d.md"
+    f.write_text(IN_BAND)
+    monkeypatch.setattr(sys, "argv", ["clarity.py", "--json", str(f)])
+    assert clarity.main() == 0
+    assert json.loads(capsys.readouterr().out)["verdict"] == "in_band"
