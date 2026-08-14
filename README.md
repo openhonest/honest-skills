@@ -60,29 +60,41 @@ line is what identified the fault in seconds.
 It also flags stray em dashes, hedging adverbs, intensifiers, stacked headings
 and sentences over twenty words.
 
-For tooling, `--json` emits the same measurement as a result object:
+Any number of files can be given, which is what a pre-commit hook passes:
 
 ```bash
-uv run tools/clarity.py --json draft.md
+uv run tools/clarity.py --json draft.md notes.md README.md
 ```
 
 ```json
 {
-  "schema": 1,
-  "verdict": "in_band",
-  "exit": 0,
-  "index": {"value": 23.1, "aim": 30, "band": [20, 40]},
-  "checks": {
-    "first_sentence": {"verdict": "unassessed",
-                       "text": "BLUF: the homepage carried no links.",
-                       "reason": "a machine cannot tell a buried lead from a deliberate one"},
-    "headings": {"verdict": "fail", "count": 8, "limit": 2, "found": ["..."]},
-    "em_dashes": {"verdict": "pass", "count": 0}
-  }
+  "schema": 2,
+  "verdict": "fail",
+  "exit": 1,
+  "counts": {"files": 3, "passed": 2, "failed": 1, "unreadable": 0},
+  "files": [
+    {
+      "source": "draft.md",
+      "verdict": "in_band",
+      "exit": 0,
+      "index": {"value": 23.1, "aim": 30, "band": [20, 40]},
+      "checks": {
+        "first_sentence": {"verdict": "unassessed",
+                           "text": "BLUF: the homepage carried no links.",
+                           "reason": "a machine cannot tell a buried lead from a deliberate one"},
+        "headings": {"verdict": "fail", "count": 8, "limit": 2, "found": ["..."]},
+        "em_dashes": {"verdict": "pass", "count": 0}
+      }
+    }
+  ]
 }
 ```
 
-Three things about that format are deliberate.
+Four things about that format are deliberate.
+
+The shape never changes with the number of files. One file still arrives as a
+list of one, so a consumer never branches on how many arguments it happened to
+pass.
 
 Every check is present whether it passed or failed. Dropping a passing check
 would save bytes and cost a consumer the ability to tell "passed" from "never
@@ -93,9 +105,10 @@ opening line back because that is all it can honestly do; a machine cannot tell
 a buried lead from a deliberate one. Most linters emit pass or fail only, so a
 rule they cannot judge gets dropped or faked.
 
-Exit codes separate the two ways of failing. `0` in band, `1` out of band, `2`
-the file could not be read. A hook that collapsed those would hide a broken
-setup behind a writing complaint.
+Exit codes separate the ways of failing. `0` every file in band, `1` one or more
+out of band, `2` one or more could not be read. Worst wins, because a run that
+could not read half its input has not passed, and a hook that collapsed those
+would hide a broken setup behind a writing complaint.
 
 ## Running the tests, and why the venv matters
 

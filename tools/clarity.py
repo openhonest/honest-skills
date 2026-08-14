@@ -3,13 +3,17 @@
 anyone remembering to.
 
     uv run tools/clarity.py draft.md
-    uv run tools/clarity.py --json draft.md
+    uv run tools/clarity.py --json draft.md doc.md   # any number of files
     pbpaste | uv run tools/clarity.py
 
 Reports the clarity index (DA Pam 600-67, para 4-3) and every mechanical defect
 the standard names: stray em dashes, deferring phrases, hedging adverbs,
 intensifiers, and sentences too long to read once. Exits 1 when the index falls
 outside 20 to 40, so it can gate a hook.
+
+Exit codes: 0 every file in band, 1 one or more out of band, 2 one or more
+could not be read. Worst wins, because a run that could not read half its input
+has not passed.
 
 Stdlib only, on purpose. This runs before sending a message, and a tool that
 needs an install is a tool that gets skipped at the moment it is wanted.
@@ -112,7 +116,7 @@ def analyse(raw: str, source: str = "-") -> dict:
     sents = sentences_of(prose)
     words = words_in(prose)
     if not sents or not words:
-        return {"schema": 1, "source": source, "verdict": "nothing_to_measure",
+        return {"source": source, "verdict": "nothing_to_measure",
                 "exit": 0, "index": None,
                 "counts": {"sentences": 0, "words": 0, "long_words": 0},
                 "measures": {}, "checks": {}}
@@ -159,7 +163,6 @@ def analyse(raw: str, source: str = "-") -> dict:
                        "count": len(hits), "found": sorted(set(hits))}
 
     return {
-        "schema": 1,
         "source": source,
         "verdict": verdict,
         "exit": 0 if verdict == "in_band" else 1,
@@ -211,39 +214,88 @@ def render_text(r: dict) -> str:
     return "\n".join(out)
 
 
-def read_source(argv: list[str]) -> tuple[str | None, str, str | None]:
-    """Return (text, source, error). Never raises on a bad path.
+def paths_from(argv: list[str]) -> list[str]:
+    """Every non-flag argument. A pre-commit hook passes all staged files at
+    once, so taking only the first would pass a commit on the strength of its
+    tidiest file."""
+    return [a for a in argv[1:] if not a.startswith("-")]
+
+
+def read_one(path: str) -> tuple[str | None, str | None]:
+    """Return (text, error). Never raises on a bad path.
 
     A traceback is a fine way to fail at a prompt and a poor way to fail inside
     a hook, where the calling tool sees a crash instead of a verdict.
     """
-    paths = [a for a in argv[1:] if not a.startswith("-")]
-    if not paths:
-        return sys.stdin.read(), "-", None
     try:
-        with open(paths[0]) as fh:
-            return fh.read(), paths[0], None
+        with open(path) as fh:
+            return fh.read(), None
     except OSError as e:
-        return None, paths[0], f"{type(e).__name__}: {e}"
+        return None, f"{type(e).__name__}: {e}"
+
+
+def unreadable(source: str, error: str) -> dict:
+    # Exit 2, not 1. A caller must be able to tell "this draft is bad" from "I
+    # could not read the draft"; collapsing them hides a broken setup behind a
+    # writing complaint.
+    return {"source": source, "verdict": "unreadable", "exit": 2,
+            "error": error, "index": None,
+            "counts": {}, "measures": {}, "checks": {}}
+
+
+def analyse_paths(paths: list[str], stdin_text: str | None = None) -> dict:
+    """Measure every path given, or stdin when none is.
+
+    The shape does not change with the number of files. A consumer should never
+    have to branch on how many arguments it happened to pass, so one file still
+    arrives as a list of one.
+    """
+    if not paths:
+        files = [analyse(stdin_text or "", "-")]
+    else:
+        files = []
+        for path in paths:
+            text, error = read_one(path)
+            files.append(unreadable(path, error) if error else analyse(text, path))
+    # Worst result wins: unreadable beats out-of-band beats clean. A run that
+    # could not read half its input has not passed.
+    worst = max(f["exit"] for f in files)
+    return {
+        "schema": 2,
+        "verdict": {0: "pass", 1: "fail", 2: "unreadable"}[worst],
+        "exit": worst,
+        "counts": {"files": len(files),
+                   "passed": sum(1 for f in files if f["exit"] == 0),
+                   "failed": sum(1 for f in files if f["exit"] == 1),
+                   "unreadable": sum(1 for f in files if f["exit"] == 2)},
+        "files": files,
+    }
+
+
+def render_run(run: dict) -> str:
+    out = []
+    many = run["counts"]["files"] > 1
+    for f in run["files"]:
+        if f["verdict"] == "unreadable":
+            out.append(f"cannot read {f['source']}: {f['error']}")
+            continue
+        if many:
+            out.append(f"\n=== {f['source']}")
+        out.append(render_text(f))
+    if many:
+        c = run["counts"]
+        out.append(f"\n{c['files']} files: {c['passed']} in band, "
+                   f"{c['failed']} out of band, {c['unreadable']} unreadable")
+    return "\n".join(out)
 
 
 def main() -> int:
-    as_json = "--json" in sys.argv[1:]
-    text, source, error = read_source(sys.argv)
-    if error is not None:
-        # Exit 2, not 1. A hook must be able to tell "this draft is bad" from
-        # "I could not read the draft"; collapsing them hides a broken setup
-        # behind a writing complaint.
-        result = {"schema": 1, "source": source, "verdict": "unreadable",
-                  "exit": 2, "error": error, "index": None,
-                  "counts": {}, "measures": {}, "checks": {}}
-        print(json.dumps(result, indent=2) if as_json
-              else f"cannot read {source}: {error}")
-        return 2
-
-    result = analyse(text, source)
-    print(json.dumps(result, indent=2) if as_json else render_text(result))
-    return result["exit"]
+    argv = sys.argv
+    as_json = "--json" in argv[1:]
+    paths = paths_from(argv)
+    run = analyse_paths(paths, None if paths else sys.stdin.read())
+    print(json.dumps(run, indent=2) if as_json else render_run(run))
+    return run["exit"]
 
 
 # The tests in tests/test_clarity.py DO exercise this, by running the script

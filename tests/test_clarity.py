@@ -262,7 +262,7 @@ def test_analyse_returns_a_result_and_prints_nothing(capsys):
     assert capsys.readouterr().out == ""
     assert r["verdict"] == "in_band"
     assert r["source"] == "draft.md"
-    assert r["schema"] == 1
+    assert "schema" not in r, "schema belongs on the run, not on each file in it"
 
 
 def test_analyse_is_deterministic():
@@ -313,8 +313,9 @@ def test_json_output_parses_and_matches_analyse(tmp_path):
                        capture_output=True, text=True)
     assert r.returncode == 0
     payload = json.loads(r.stdout)
-    assert payload["verdict"] == "in_band"
-    assert payload == clarity.analyse(IN_BAND, str(f))
+    assert payload["schema"] == 2
+    assert payload["verdict"] == "pass"
+    assert payload["files"] == [clarity.analyse(IN_BAND, str(f))]
 
 
 def test_json_is_exclusive_of_the_human_report(tmp_path):
@@ -355,22 +356,20 @@ def test_unreadable_file_in_json_says_why(tmp_path):
     payload = json.loads(r.stdout)
     assert payload["verdict"] == "unreadable"
     assert payload["exit"] == 2
-    assert "FileNotFoundError" in payload["error"]
+    assert "FileNotFoundError" in payload["files"][0]["error"]
 
 
-def test_read_source_falls_back_to_stdin_when_only_flags_given(monkeypatch):
-    monkeypatch.setattr(sys, "stdin", io.StringIO("some prose here"))
-    text, source, error = clarity.read_source(["clarity.py", "--json"])
-    assert (text, source, error) == ("some prose here", "-", None)
+def test_flags_are_not_mistaken_for_paths():
+    assert clarity.paths_from(["clarity.py", "--json"]) == []
+    assert clarity.paths_from(["clarity.py", "--json", "a.md", "b.md"]) == ["a.md", "b.md"]
 
 
 # The subprocess tests above prove the shell contract but run in a child that
 # in-process coverage cannot observe. These exercise the same paths in-process
 # so the error branch is measured rather than merely believed.
-def test_read_source_reports_a_missing_file_without_raising(tmp_path):
-    text, source, error = clarity.read_source(["clarity.py", str(tmp_path / "gone.md")])
+def test_read_one_reports_a_missing_file_without_raising(tmp_path):
+    text, error = clarity.read_one(str(tmp_path / "gone.md"))
     assert text is None
-    assert source.endswith("gone.md")
     assert "FileNotFoundError" in error
 
 
@@ -393,4 +392,84 @@ def test_main_in_process_json_success(monkeypatch, capsys, tmp_path):
     f.write_text(IN_BAND)
     monkeypatch.setattr(sys, "argv", ["clarity.py", "--json", str(f)])
     assert clarity.main() == 0
-    assert json.loads(capsys.readouterr().out)["verdict"] == "in_band"
+    assert json.loads(capsys.readouterr().out)["files"][0]["verdict"] == "in_band"
+
+
+# ------------------------------------------------------------ many files
+# A pre-commit hook passes every staged file at once. Taking only the first
+# would pass a commit on the strength of its tidiest file.
+def write(tmp_path, name, text):
+    f = tmp_path / name
+    f.write_text(text)
+    return str(f)
+
+
+def test_one_file_still_arrives_as_a_list_of_one(tmp_path):
+    """A consumer should never branch on how many arguments it passed."""
+    run = clarity.analyse_paths([write(tmp_path, "a.md", IN_BAND)])
+    assert run["schema"] == 2
+    assert run["counts"]["files"] == 1
+    assert isinstance(run["files"], list)
+
+
+def test_every_path_is_measured_not_just_the_first(tmp_path):
+    run = clarity.analyse_paths([
+        write(tmp_path, "a.md", IN_BAND),
+        write(tmp_path, "b.md", "It ran. It broke. I fixed it. It runs."),
+    ])
+    assert run["counts"] == {"files": 2, "passed": 1, "failed": 1, "unreadable": 0}
+    assert [f["verdict"] for f in run["files"]] == ["in_band", "too_abrupt"]
+
+
+def test_worst_result_wins(tmp_path):
+    good = write(tmp_path, "a.md", IN_BAND)
+    bad = write(tmp_path, "b.md", "It ran. It broke. I fixed it. It runs.")
+    missing = str(tmp_path / "gone.md")
+    assert clarity.analyse_paths([good])["exit"] == 0
+    assert clarity.analyse_paths([good, bad])["exit"] == 1
+    assert clarity.analyse_paths([good, missing])["exit"] == 2
+    # An unreadable file outranks a merely out-of-band one: a run that could
+    # not read half its input has not passed.
+    assert clarity.analyse_paths([bad, missing])["exit"] == 2
+
+
+def test_one_unreadable_file_does_not_stop_the_others(tmp_path):
+    run = clarity.analyse_paths([str(tmp_path / "gone.md"),
+                                 write(tmp_path, "a.md", IN_BAND)])
+    assert run["counts"]["unreadable"] == 1
+    assert run["counts"]["passed"] == 1
+    assert run["files"][1]["verdict"] == "in_band"
+
+
+def test_text_output_names_each_file_when_there_are_several(tmp_path):
+    a = write(tmp_path, "a.md", IN_BAND)
+    b = write(tmp_path, "b.md", IN_BAND)
+    out = clarity.render_run(clarity.analyse_paths([a, b]))
+    assert f"=== {a}" in out and f"=== {b}" in out
+    assert "2 files: 2 in band, 0 out of band, 0 unreadable" in out
+
+
+def test_text_output_does_not_name_a_single_file(tmp_path):
+    out = clarity.render_run(clarity.analyse_paths([write(tmp_path, "a.md", IN_BAND)]))
+    assert "===" not in out
+    assert "1 files" not in out
+
+
+def test_cli_measures_every_file_given(tmp_path):
+    a = write(tmp_path, "a.md", IN_BAND)
+    b = write(tmp_path, "b.md", "It ran. It broke. I fixed it. It runs.")
+    r = subprocess.run([sys.executable, str(ROOT / "tools" / "clarity.py"), "--json", a, b],
+                       capture_output=True, text=True)
+    assert r.returncode == 1
+    payload = json.loads(r.stdout)
+    assert payload["counts"]["files"] == 2
+    assert [f["source"] for f in payload["files"]] == [a, b]
+
+
+def test_stdin_still_works_when_no_path_is_given(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["clarity.py", "--json"])
+    monkeypatch.setattr(sys, "stdin", io.StringIO(IN_BAND))
+    assert clarity.main() == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["counts"]["files"] == 1
+    assert payload["files"][0]["source"] == "-"
