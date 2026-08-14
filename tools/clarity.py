@@ -54,6 +54,16 @@ TELLS = (r"the (honest|useful|interesting|real|hard|important|key) part\b",
          r"this is the part", r"here is the part", r"load-bearing",
          r"\bit'?s not (just )?about\b", r"\bnot only\b.{0,40}\bbut also\b")
 
+# Words ending in -ly that are nouns or adjectives, so they may take a hyphen.
+# Used by the -ly rule below. Incomplete by construction; see the comment there.
+NOT_ADVERBS = "|".join((
+    "assembly", "family", "supply", "reply", "apply", "ally", "anomaly",
+    "monopoly", "belly", "jelly", "rally", "folly", "bully", "holy", "only",
+    "early", "ugly", "likely", "friendly", "costly", "deadly", "lively",
+    "lonely", "silly", "timely", "elderly", "orderly", "burly", "curly",
+    "surly", "wily", "oily", "daily", "weekly", "monthly", "yearly", "hourly",
+))
+
 # Mechanical punctuation from the AP Stylebook, 1960, the first joint AP/UPI
 # edition. Only the rules a regular expression can settle outright are here.
 #
@@ -63,8 +73,13 @@ TELLS = (r"the (honest|useful|interesting|real|hard|important|key) part\b",
 # flag correct prose, and a check that flags correct prose gets turned off.
 AP_MECHANICS = (
     # 3.31: never hyphenate an adverb ending in -ly. "badly damaged", not
-    # "badly-damaged". The one hyphen rule with no exceptions.
-    r"\b\w+ly-\w+",
+    # "badly-damaged". The rule is about ADVERBS, and not every word ending in
+    # -ly is one: "assembly-language", "family-owned" and "friendly-fire" are
+    # correct. NOT_ADVERBS below excludes the common nouns and adjectives.
+    # The list is short and certainly incomplete. A false positive here is a
+    # bug worth reporting, because a check that flags correct prose is a check
+    # people turn off.
+    rf"\b(?!(?:{NOT_ADVERBS})-)\w+ly-\w+",
     # 3.24: the comma and the period always go inside the quotation marks.
     r"[\"”][,.]",
     # 3.21: no comma before Jr., Sr., or an ampersand. AP bans it before a

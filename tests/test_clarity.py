@@ -623,3 +623,34 @@ def test_the_summary_names_the_gate_not_the_index(tmp_path):
     assert code == 1
     assert "2 files: 1 clean, 1 failed a gate, 0 unreadable" in out
     assert "out of band" not in out
+
+
+@pytest.mark.parametrize("text", [
+    "The assembly-language routine ran inside the family-owned plant.",
+    "It was a friendly-fire incident, logged in the weekly-updated record.",
+    "The early-stage supply-chain review found no fault in the process.",
+])
+def test_ly_words_that_are_not_adverbs_may_take_a_hyphen(tmp_path, text):
+    """AP's rule bans the hyphen after an ADVERB ending in -ly. Not every word
+    ending in -ly is one, and flagging "assembly-language" is the kind of false
+    positive that gets a hook switched off. Found by running the checker over a
+    book manuscript, where it flagged assembly-language as a defect."""
+    assert "AP PUNCTUATION" not in run(text, tmp_path)[1]
+
+
+@pytest.mark.parametrize("found", [
+    "badly-damaged", "federally-regulated", "nearly-deterministic",
+    "fully-loaded", "frequently-accessed",
+])
+def test_real_ly_adverbs_are_still_caught(tmp_path, found):
+    code, out = run(f"The report named a {found} case in the filing.", tmp_path)
+    assert code == 1 and found in out
+
+
+def test_the_exclusion_list_is_documented_as_incomplete():
+    """The list cannot be complete, and saying so is the difference between a
+    known limit and a silent one."""
+    import inspect
+    src = inspect.getsource(clarity)
+    assert "incomplete" in src.lower()
+    assert len(clarity.NOT_ADVERBS.split("|")) > 20
