@@ -61,6 +61,44 @@ It also flags stray em dashes, hedging adverbs, intensifiers, stacked headings
 and sentences over twenty words. It exits 1 when the index leaves the band, so
 it can gate a hook.
 
+## Running the tests, and why the venv matters
+
+```bash
+uv venv .venv
+uv pip install --python .venv/bin/python pytest pytest-randomly coverage
+.venv/bin/python -m pytest tests/ -q
+```
+
+The virtual environment is not committed, so a fresh clone has none. That is
+worth knowing because of what depends on it.
+
+This repository is audited with the [Slop Audit](https://slopaudit.org) L1
+analyzer, which measures whether code can be exhaustively verified. Two of its
+indicators need to execute the test suite rather than read it:
+
+| indicator | what it measures | needs |
+|---|---|---|
+| L1.18 | state that can grow without limit | reading the code |
+| L1.19 | decision branches the tests actually exercise | running the suite |
+| L1.20 | whether the suite passes in a randomized order | `pytest-randomly` |
+
+Without a venv holding pytest, L1.19 and L1.20 report `No data`. That is not the
+same as reporting zero, and the analyzer says so: it distinguishes "we did not
+run it" from "we could not run it here". Current results on a prepared clone:
+
+```
+L1.18   0 of 5 functions reference external mutable state
+L1.18b  resolvable fraction 1.0
+L1.19   26 of 26 decision branches exercised
+L1.20   5 of 5 randomized-order runs passed
+```
+
+`tools/clarity.py` is at 100% branch coverage. The `__main__` guard carries a
+no-cover pragma with the reason written beside it: the tests do exercise it, by
+running the script the way a shell or a hook does, but in-process coverage
+cannot observe a child process. The pragma records that the gap is in the
+instrument rather than in the tests.
+
 ## These are readability rules, not AI-detection rules
 
 The bans on hedges and deferring phrases resemble the tells people cite when
