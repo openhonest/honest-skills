@@ -34,6 +34,12 @@ AIM = 30
 SENTENCE_LIMIT = 20
 HEADING_LIMIT = 2
 
+# Which checks decide the exit code. A gate may only rest on what a machine can
+# judge outright. Heading count and sentence length are judgement calls: a long
+# sentence can be right and a fourth heading can be earned, so they are reported
+# and do not fail the run. first_sentence is unassessable by construction.
+GATING = ("em_dashes", "hedges", "intensifiers", "tells", "banned_words")
+
 # Adverbs that assert a confidence the evidence has not earned. Named separately
 # from intensifiers because this group is a truthfulness problem, not a style
 # one: a project that judges others for overclaiming cannot write "clearly".
@@ -79,6 +85,10 @@ def strip_furniture(text: str) -> str:
     report full of measurements would score as unreadable for carrying its own
     evidence.
     """
+    # YAML frontmatter, at the top only. A skill file opens with its metadata,
+    # so without this the tool reports "name: sitrep" back as your first
+    # sentence, which is the check it exists to make.
+    text = re.sub(r"\A---\n[\s\S]*?\n---\n", " ", text)
     text = re.sub(r"```[\s\S]*?```", " ", text)
     # Headings are furniture too. Left in, "## Length" counts as a one-word
     # sentence and drags the average down, so a document with many headings
@@ -161,11 +171,18 @@ def analyse(raw: str, source: str = "-") -> dict:
         hits = [h for p in pats for h in scan(p, prose)]
         checks[key] = {"verdict": "fail" if hits else "pass",
                        "count": len(hits), "found": sorted(set(hits))}
+    for key, check in checks.items():
+        check["gating"] = key in GATING
 
+    # A document can sit in the band and still be full of hedges. Reading the
+    # index alone let that pass, which made the gate report a pass it had not
+    # established.
+    failed = [k for k in GATING if checks[k]["verdict"] == "fail"]
     return {
         "source": source,
         "verdict": verdict,
-        "exit": 0 if verdict == "in_band" else 1,
+        "exit": 0 if verdict == "in_band" and not failed else 1,
+        "gating_failures": failed,
         "index": {"value": round(index, 1), "aim": AIM, "band": list(BAND)},
         "counts": {"sentences": len(sents), "words": len(words),
                    "long_words": len(long_words)},

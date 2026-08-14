@@ -1,0 +1,45 @@
+# Hooks published for use in any repository:
+#
+#   repos:
+#     - repo: https://github.com/openhonest/honest-skills
+#       rev: main
+#       hooks:
+#         - id: honest-prose
+#         - id: honest-commit-msg
+#
+# Every hook gates only on what a machine can judge outright. Heading count,
+# sentence length and whether a subject says what changed are reported and never
+# fail a commit, because a machine cannot tell a deliberate choice from a
+# careless one. Gating on a judgement call teaches people to disable the hook.
+
+- id: honest-prose
+  name: honest prose (readability, hedges, stray em dashes)
+  description: >
+    Scores Markdown against the clarity index from DA Pam 600-67 and flags
+    hedging adverbs, intensifiers, deferring phrases and stray em dashes.
+    Fails on those and on an index outside 20 to 40. Reports heading count,
+    long sentences and your opening line without failing on them.
+  entry: tools/clarity.py
+  language: script
+  types: [markdown]
+
+- id: honest-commit-msg
+  name: honest commit message
+  description: >
+    Checks the subject line length, the blank line after it, and the same word
+    classes. Prints the subject back and asks whether it says what changed,
+    which is the one check nothing can automate. The clarity index is not
+    applied: a dozen-word subject is too small a sample for it to mean
+    anything.
+  entry: tools/commit_msg.py
+  language: script
+  stages: [commit-msg]
+
+- id: honest-skill-check
+  name: honest skill files meet their own standard
+  description: >
+    Runs the prose check over SKILL.md files, so a repository publishing a
+    writing standard cannot ship a skill that fails it.
+  entry: tools/clarity.py
+  language: script
+  files: (^|/)SKILL\.md$

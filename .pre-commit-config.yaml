@@ -1,0 +1,15 @@
+# This repository runs its own hooks against itself. A project publishing a
+# writing standard that does not meet it has published an opinion, not a tool.
+repos:
+  - repo: local
+    hooks:
+      - id: honest-prose
+        name: honest prose
+        entry: tools/clarity.py
+        language: script
+        types: [markdown]
+      - id: honest-commit-msg
+        name: honest commit message
+        entry: tools/commit_msg.py
+        language: script
+        stages: [commit-msg]

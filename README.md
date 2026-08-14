@@ -10,6 +10,8 @@ report what it cannot do.
   the confidence named per claim, and a gap named for anything unverified.
 - **`tools/clarity.py`** scores a draft, so the rules are a check rather than
   advice.
+- **Three pre-commit hooks** run the same checks over your Markdown and your
+  commit messages, and refuse to gate on anything a machine cannot judge.
 
 Apache 2.0. No dependencies.
 
@@ -110,6 +112,41 @@ out of band, `2` one or more could not be read. Worst wins, because a run that
 could not read half its input has not passed, and a hook that collapsed those
 would hide a broken setup behind a writing complaint.
 
+## As pre-commit hooks
+
+```yaml
+repos:
+  - repo: https://github.com/openhonest/honest-skills
+    rev: main
+    hooks:
+      - id: honest-prose         # every staged Markdown file
+      - id: honest-commit-msg    # the commit message itself
+      - id: honest-skill-check   # SKILL.md files only
+```
+
+`honest-commit-msg` needs the commit-msg stage installed, which pre-commit does
+not do by default:
+
+```bash
+pre-commit install --hook-type pre-commit --hook-type commit-msg
+```
+
+The hooks gate on what a machine can judge outright: stray em dashes, hedging
+adverbs, intensifiers, deferring phrases, and an index outside the band. They
+report heading count, long sentences and your opening line without failing on
+them, because a machine cannot tell a deliberate long sentence from a careless
+one. A hook that fails a judgement call gets disabled, and it takes the checks
+that were worth having with it.
+
+The commit-message hook does not apply the clarity index. A dozen-word subject
+is too small a sample for it, so the number would look like a measurement and
+be arithmetic on noise. It checks the subject length, the blank line after it,
+and the same word classes, then prints the subject back and asks whether it says
+what changed. Nothing can check that for you, and saying so is the point.
+
+gitlint and commitizen already check commit syntax, prefix and imperative mood.
+Run them alongside; they cover different ground.
+
 ## Running the tests, and why the venv matters
 
 ```bash
@@ -136,13 +173,13 @@ same as reporting zero, and the analyzer says so: it distinguishes "we did not
 run it" from "we could not run it here". Current results on a prepared clone:
 
 ```
-L1.18   0 of 5 functions reference external mutable state
+L1.18   0 of 17 functions reference external mutable state
 L1.18b  resolvable fraction 1.0
-L1.19   26 of 26 decision branches exercised
+L1.19   64 of 64 decision branches exercised
 L1.20   5 of 5 randomized-order runs passed
 ```
 
-`tools/clarity.py` is at 100% branch coverage. The `__main__` guard carries a
+Both tools are at 100% branch coverage. The `__main__` guard carries a
 no-cover pragma with the reason written beside it: the tests do exercise it, by
 running the script the way a shell or a hook does, but in-process coverage
 cannot observe a child process. The pragma records that the gap is in the

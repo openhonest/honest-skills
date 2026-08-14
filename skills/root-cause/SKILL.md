@@ -43,7 +43,7 @@ A root bottoms out in exactly one of: a physical/external constraint, a delibera
 Two triggers that mean you have NOT reached the root, however well your explanation fits:
 
 - **Your fix works AROUND the cause instead of removing it.** Relocating, caching, retrying, deferring, adding a queue: these accommodate a cause. A cope, not a cure, is proof the cause is still upstream. (This is the "don't layer a fix on a broken approach" rule wearing an RCA hat.)
-- **A quantity is surprising.** If a number makes you blink, say a dozen writes to move one item, three seconds for a one-row update, the absurdity IS the signal. Do not record it as a finding and move on. Ask why it is that large; the magnitude points at the root.
+- **A quantity is surprising.** If a number makes you blink, say a dozen writes to store one item, three seconds for a one-row update, the absurdity IS the signal. Do not record it as a finding and carry on. Ask why it is that large; the magnitude points at the root.
 
 Having a viable fix in hand is not evidence you reached the root. The moment an explanation both fits the data and suggests an action is exactly when it is most tempting to stop, and most likely you are one level short.
 
@@ -69,7 +69,7 @@ So at every stage, before accepting an instrument's output as the link, **name i
 - An **aggregate** (a P95, a total, a mean) is blind to the *distribution* beneath it. → look at the individual values; the tail is often the whole story.
 - **Reading the code** shows *structure*; it is blind to *necessity and runtime values*. → ask whether the structure must exist, and reproduce the values it actually produces.
 - A **passing test** shows the path it covers; it is blind to *the paths it does not*. → ask what it cannot exercise.
-- A **measurement on one build / box / session** is blind to *whether it is representative*. → vary the thing you held fixed and see if the result moves.
+- A **measurement on one build / box / session** is blind to *whether it is representative*. → vary the thing you held fixed and see if the result changes.
 
 The discipline is active: after each link, ask "what is this instrument unable to show me *here*?" and treat that blind spot as the assignment for the next instrument. If you cannot name your current instrument's horizon, you do not yet understand what you are measuring, and you are about to mistake its edge for the bottom.
 

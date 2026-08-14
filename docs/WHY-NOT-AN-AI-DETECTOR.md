@@ -1,7 +1,7 @@
 # These are readability rules, not AI-detection rules
 
-Read the check list and you will see bans on "the honest part", on hedges like
-"clearly" and "arguably", on stacked headings, and on burying the conclusion.
+Read the check list and you will see bans on `the honest part`, on hedges like
+`clearly` and `arguably`, on stacked headings, and on burying the conclusion.
 Those look like the tells people cite when accusing a text of being
 machine-written. They are not, and the difference matters enough to state
 plainly.
@@ -42,12 +42,12 @@ first structural rule.
 **Short sentences and short words.** These are the two variables in every
 readability formula since 1948. Not a style preference: the measured inputs.
 
-**No hedging adverbs.** "Clearly", "obviously", "arguably" assert a confidence
+**No hedging adverbs.** `Clearly`, `obviously`, `arguably` assert a confidence
 the sentence has not earned. Cutting them is not about sounding less like a
 model. It is about not claiming what you cannot show, which is the same standard
 this project applies to a benchmark or a study.
 
-**No "the honest part", no "this is the part".** These spend a clause announcing
+**No `the honest part`, no `this is the part`.** These spend a clause announcing
 that a point is coming, then make the point. That is one clause of delay per
 occurrence, paid by every reader. The same objection applies to "it should be
 noted that" and "at the end of the day", which no one associates with machines.

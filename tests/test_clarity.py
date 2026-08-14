@@ -473,3 +473,79 @@ def test_stdin_still_works_when_no_path_is_given(monkeypatch, capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["counts"]["files"] == 1
     assert payload["files"][0]["source"] == "-"
+
+
+# --- gating -----------------------------------------------------------------
+#
+# Added after the checker was found reporting exit 0 on a draft that failed
+# three word checks, because the exit code read only the clarity index. A gate
+# that passes what it flagged is worse than no gate: it certifies the defect.
+
+CLEAN = ("The daily report showed no traffic for two of the sites since Tuesday "
+         "morning. A stale token in the collector caused it, and every request was "
+         "rejected without a warning. I issued a replacement token and the counts "
+         "recovered on the same afternoon.")
+HEDGED = ("The result was clearly and obviously very significant indeed today, "
+          "and the needle did move sharply.")
+
+
+def test_word_failure_sets_exit_one_even_when_index_is_in_band():
+    r = clarity.analyse(HEDGED)
+    assert r["verdict"] == "in_band"
+    assert r["gating_failures"], "in band but nothing gated, so nothing gates"
+    assert r["exit"] == 1
+
+
+def test_clean_prose_in_band_exits_zero():
+    r = clarity.analyse(CLEAN)
+    assert (r["verdict"], r["gating_failures"], r["exit"]) == ("in_band", [], 0)
+
+
+def test_gating_failures_names_every_failing_gate_and_nothing_else():
+    r = clarity.analyse(HEDGED)
+    assert set(r["gating_failures"]) == {"hedges", "intensifiers", "banned_words"}
+    assert all(r["checks"][k]["verdict"] == "fail" for k in r["gating_failures"])
+
+
+def test_every_check_declares_whether_it_gates():
+    checks = clarity.analyse(CLEAN)["checks"]
+    assert all("gating" in c for c in checks.values())
+    assert {k for k, c in checks.items() if c["gating"]} == set(clarity.GATING)
+
+
+def test_judgement_calls_are_reported_and_never_gate():
+    """headings, long sentences and the first line are reported, not enforced.
+
+    A machine cannot tell a deliberate long sentence from a careless one. Gating
+    on that teaches people to disable the hook, which costs the checks that can
+    be judged.
+    """
+    for key in ("first_sentence", "headings", "long_sentences"):
+        assert key not in clarity.GATING
+    r = clarity.analyse("# A\n## B\n### C\n" + CLEAN)
+    assert r["checks"]["headings"]["verdict"] == "fail"
+    assert r["exit"] == 0
+
+
+def test_hook_run_exits_one_on_hedges(tmp_path):
+    code, out = run(HEDGED, tmp_path)
+    assert code == 1
+    assert "HEDGES" in out
+
+
+def test_frontmatter_is_not_prose(tmp_path):
+    """A skill file opens with its metadata. Scored, it becomes the first
+    sentence, and the checker reports "name: sitrep" back as your lead."""
+    _, out = run("---\nname: sitrep\ndescription: Report in brief format.\n---\n\n"
+                 + CLEAN, tmp_path)
+    assert "name: sitrep" not in out
+    assert "FIRST SENTENCE  The daily report" in out
+
+
+def test_frontmatter_is_only_stripped_at_the_top(tmp_path):
+    """A horizontal rule mid-document is prose furniture, not metadata. Treating
+    it as frontmatter would silently delete the body between two rules."""
+    body = "\n\n---\nThe collector runs on a schedule of its own.\n---\n\n"
+    with_rule = clarity.analyse(CLEAN + body + CLEAN)["counts"]["words"]
+    without = clarity.analyse(CLEAN + "\n\n" + CLEAN)["counts"]["words"]
+    assert with_rule - without == 9, "the text between mid-document rules vanished"
