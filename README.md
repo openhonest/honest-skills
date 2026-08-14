@@ -129,12 +129,16 @@ would hide a broken setup behind a writing complaint.
 ```yaml
 repos:
   - repo: https://github.com/openhonest/honest-skills
-    rev: main
+    rev: v0.2.0
     hooks:
       - id: honest-prose         # every staged Markdown file
       - id: honest-commit-msg    # the commit message itself
       - id: honest-skill-check   # SKILL.md files only
 ```
+
+Pin a tag or a commit, not `main`. pre-commit caches a clone by its `rev`
+string, so a branch name keeps serving whatever it fetched the first time and
+never picks up a change. `pre-commit autoupdate` moves the pin for you.
 
 `honest-commit-msg` needs the commit-msg stage installed, which pre-commit does
 not do by default:
