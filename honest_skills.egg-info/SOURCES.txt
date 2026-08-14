@@ -1,0 +1,10 @@
+LICENSE
+NOTICE
+README.md
+pyproject.toml
+honest_skills.egg-info/PKG-INFO
+honest_skills.egg-info/SOURCES.txt
+honest_skills.egg-info/dependency_links.txt
+honest_skills.egg-info/requires.txt
+honest_skills.egg-info/top_level.txt
+tests/test_clarity.py

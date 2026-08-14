@@ -14,6 +14,19 @@ they have to do about it. They do not want to watch you think.
 Also every screenshot they send, because a screenshot is someone pointing at
 something and asking what it means.
 
+## Why this shape
+
+A report is read by someone deciding what to do next, and they stop reading the
+moment they have enough. Everything you place after that decision point is
+invisible to them, so the order of a report is not presentation, it is what
+survives. Putting the conclusion last hides it behind material the reader has
+already stopped needing.
+
+The military convention exists because the cost of a buried conclusion is
+measured in something other than irritation. The same logic applies to an
+incident report, a pull-request description or a status update: the reader wants
+the answer, then the evidence for it, then the part that needs them.
+
 ## The format
 
 Use this shape whatever the verb. It scales from three lines to a page.
@@ -82,7 +95,9 @@ back to me".
 
 ## Length
 
-The report is not the work. A one-line fix gets a three-line report.
+The report is not the work, and length is not evidence of effort. A one-line fix
+gets a three-line report. Padding one out with structure signals thoroughness
+while costing the reader the time that thoroughness was supposed to save them.
 
 - Two headings maximum. More means you are performing thoroughness.
 - No table for fewer than three rows.

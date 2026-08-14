@@ -1,0 +1,4 @@
+
+[dev]
+pytest>=8.0
+coverage>=7.8

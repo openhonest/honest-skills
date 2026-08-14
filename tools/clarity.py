@@ -57,6 +57,12 @@ def strip_furniture(text: str) -> str:
     measurements would score as unreadable for containing its evidence.
     """
     text = re.sub(r"```[\s\S]*?```", " ", text)
+    # Headings are furniture too. Left in, "## Length" counts as a one-word
+    # sentence and drags the average down, so a document with many headings
+    # scores falsely low and reads as too abrupt when its prose is fine. Found
+    # by running this tool on the skill file that ships beside it. Heading COUNT
+    # is still checked separately, in main().
+    text = re.sub(r"^\s*#{1,6} .*$", " ", text, flags=re.M)
     text = re.sub(r"^\s*\|.*\|\s*$", " ", text, flags=re.M)
     text = re.sub(r"https?://\S+", " ", text)
     text = re.sub(r"`[^`]*`", " ", text)
@@ -132,5 +138,9 @@ def main() -> int:
     return 0 if 20 <= index <= 40 else 1
 
 
-if __name__ == "__main__":
+# The tests in tests/test_clarity.py DO exercise this, by running the script
+# as a shell or a pre-commit hook would. In-process coverage cannot see a
+# child process, so it reports the branch as missed. The pragma records that
+# the gap is in the instrument, not in the tests.
+if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
