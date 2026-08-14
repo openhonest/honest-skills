@@ -8,7 +8,9 @@ anyone remembering to.
 
 Reports the clarity index (DA Pam 600-67, para 4-3) and every mechanical defect
 the standard names: stray em dashes, deferring phrases, hedging adverbs,
-intensifiers, and sentences too long to read once. Exits 1 when the index falls
+intensifiers, and sentences too long to read once. Every rule here would be
+worth following in a world with no language models; anything that fails that
+test does not belong in this tool. Exits 1 when the index falls
 outside 20 to 40, so it can gate a hook.
 
 Exit codes: 0 every file in band, 1 one or more out of band, 2 one or more
@@ -38,7 +40,7 @@ HEADING_LIMIT = 2
 # judge outright. Heading count and sentence length are judgement calls: a long
 # sentence can be right and a fourth heading can be earned, so they are reported
 # and do not fail the run. first_sentence is unassessable by construction.
-GATING = ("em_dashes", "hedges", "intensifiers", "tells", "banned_words")
+GATING = ("em_dashes", "hedges", "intensifiers", "tells", "ap_mechanics")
 
 # Adverbs that assert a confidence the evidence has not earned. Named separately
 # from intensifiers because this group is a truthfulness problem, not a style
@@ -51,17 +53,38 @@ INTENSIFIERS = ("very", "really", "quite", "extremely", "incredibly",
 TELLS = (r"the (honest|useful|interesting|real|hard|important|key) part\b",
          r"this is the part", r"here is the part", r"load-bearing",
          r"\bit'?s not (just )?about\b", r"\bnot only\b.{0,40}\bbut also\b")
-BANNED_WORDS = (r"\bmove[sd]?\b", r"\bmoving\b", r"\bsharp(ly|er|en)?\b",
-                r"\brare\b")
+
+# Mechanical punctuation from the AP Stylebook, 1960, the first joint AP/UPI
+# edition. Only the rules a regular expression can settle outright are here.
+#
+# AP's serial-comma rule is deliberately absent. It bans the comma before the
+# final "and" in a list, but keeps it where both halves are full clauses, and
+# telling those apart needs to parse the sentence. A check that guesses would
+# flag correct prose, and a check that flags correct prose gets turned off.
+AP_MECHANICS = (
+    # 3.31: never hyphenate an adverb ending in -ly. "badly damaged", not
+    # "badly-damaged". The one hyphen rule with no exceptions.
+    r"\b\w+ly-\w+",
+    # 3.24: the comma and the period always go inside the quotation marks.
+    r"[\"”][,.]",
+    # 3.21: no comma before Jr., Sr., or an ampersand. AP bans it before a
+    # roman numeral too, and that half is left out: these patterns are matched
+    # without regard to case, so "III" and ", I ran the query" are the same
+    # string to the check. Flagging the commonest pronoun in English to catch
+    # "John Jones, III" is a trade no one would take.
+    r",\s+(Jr\.|Sr\.|&\s)",
+    # AP sets these solid.
+    r"\b(week-end|world-wide|nation-wide)\b",
+)
 
 WORD_CLASSES = (
     ("hedges", [rf"\b{h}\b" for h in HEDGES]),
     ("intensifiers", [rf"\b{i}\b" for i in INTENSIFIERS]),
     ("tells", list(TELLS)),
-    ("banned_words", list(BANNED_WORDS)),
+    ("ap_mechanics", list(AP_MECHANICS)),
 )
 LABELS = {"hedges": "HEDGES", "intensifiers": "INTENSIFIERS",
-          "tells": "AI TELLS", "banned_words": "BANNED WORDS"}
+          "tells": "AI TELLS", "ap_mechanics": "AP PUNCTUATION"}
 
 
 def syllables(word: str) -> int:
@@ -300,9 +323,13 @@ def render_run(run: dict) -> str:
             out.append(f"\n=== {f['source']}")
         out.append(render_text(f))
     if many:
+        # "out of band" named only one of the two ways to fail, so a file that
+        # scored 26 and failed four word checks was reported as unreadable
+        # prose. The summary now says which gate refused, not which one it
+        # happened to check first.
         c = run["counts"]
-        out.append(f"\n{c['files']} files: {c['passed']} in band, "
-                   f"{c['failed']} out of band, {c['unreadable']} unreadable")
+        out.append(f"\n{c['files']} files: {c['passed']} clean, "
+                   f"{c['failed']} failed a gate, {c['unreadable']} unreadable")
     return "\n".join(out)
 
 

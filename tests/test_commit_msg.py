@@ -95,10 +95,10 @@ def test_a_stray_em_dash_fails_and_a_pair_does_not(tmp_path):
                tmp_path)[0] == 0
 
 
-def test_a_banned_word_fails(tmp_path):
-    code, out = run("Move the token check into the collector\n", tmp_path)
+def test_an_ap_punctuation_defect_fails(tmp_path):
+    code, out = run("Recover the badly-damaged token file\n", tmp_path)
     assert code == 1
-    assert "banned words" in out.lower()
+    assert "badly-damaged" in out
 
 
 # --- git's own template must not be scored ----------------------------------
@@ -217,3 +217,15 @@ def test_the_script_runs_as_a_hook_and_exits_zero(tmp_path):
                        capture_output=True, text=True)
     assert p.returncode == 0
     assert "commit message: ok" in p.stdout
+
+
+def test_a_code_span_is_a_mention_not_a_use(tmp_path):
+    """A commit that fixes a hyphenated -ly adverb has to name the thing it
+    fixed. A checker that cannot tell a mention from a use makes its own
+    defects unreportable."""
+    code, out = run("Set `badly-damaged` solid, per AP\n", tmp_path)
+    assert code == 0, out
+
+
+def test_the_same_defect_outside_a_code_span_still_fails(tmp_path):
+    assert run("Set badly-damaged solid, per AP\n", tmp_path)[0] == 1

@@ -12,9 +12,9 @@ Follow this method. Do not shortcut it.
 
 ## The one rule that matters
 
-**Every link in the chain is a verified fact, not a guess.** If you cannot show the evidence for a link, meaning a query result, a log line, a file you read, a value you reproduced, then you have not found that link yet. Keep digging or say you don't know. Never write "most likely", "probably", "it seems", or "this is likely because" as a substitute for looking.
+**Every link in the chain is a verified fact, not a guess.** If you cannot show the evidence for a link, meaning a query result, a log line, a file you read, a value you reproduced, then you have not found that link yet. Keep digging or say you don't know. Never write "most likely," "probably," "it seems," or "this is likely because" as a substitute for looking.
 
-If the user pushes back with "I don't want the most likely" or "verify it", that is a signal you skipped this rule. Go back and prove the link.
+If the user pushes back with "I don't want the most likely" or "verify it," that is a signal you skipped this rule. Go back and prove the link.
 
 ## The loop
 
@@ -38,7 +38,7 @@ The three "done" conditions share one property: each is something that could not
 
 **Is this cause NECESSARY, or merely PRESENT?**
 
-A root bottoms out in exactly one of: a physical/external constraint, a deliberate and defensible design decision, or a genuine requirement. If instead the "cause" is a piece of existing *implementation*, such as "the code loops and writes N times", "it re-reads every call" or "it opens a connection per request", that is **present, not necessary**. Existing code is not a law of physics; it is a candidate for change, and it owes one more "why": *why is it written this way, and does it need to be?* The answer is usually where the real fix lives, and usually a smaller, better fix than working around the symptom.
+A root bottoms out in exactly one of: a physical/external constraint, a deliberate and defensible design decision, or a genuine requirement. If instead the "cause" is a piece of existing *implementation*, such as "the code loops and writes N times," "it re-reads every call" or "it opens a connection per request," that is **present, not necessary**. Existing code is not a law of physics; it is a candidate for change, and it owes one more "why": *why is it written this way, and does it need to be?* The answer is usually where the real fix lives, and usually a smaller, better fix than working around the symptom.
 
 Two triggers that mean you have NOT reached the root, however well your explanation fits:
 
@@ -54,7 +54,7 @@ The fast, correct way to find the next link is to follow the actual data/control
 - Resolve identifiers concretely (what UUID did the app map that slug to? what row?).
 - Read the value at each hop and compare: is it correct *here* but wrong *there*? The break is between those two hops.
 - When a hop is a service you can't read directly, find how it's wired (env vars, config, service list) and read the thing it points at.
-- **Reproduce the failing path and the fixed path.** If you claim "the source is now correct", make the exact call the failing component makes and show it returns correct data. If you claim a component is stale, read its stored copy and show the stale value.
+- **Reproduce the failing path and the fixed path.** If you claim "the source is now correct," make the exact call the failing component makes and show it returns correct data. If you claim a component is stale, read its stored copy and show the stale value.
 
 A theory you could have checked but didn't is not part of an RCA.
 

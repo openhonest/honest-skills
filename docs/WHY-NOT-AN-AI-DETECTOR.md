@@ -50,7 +50,13 @@ this project applies to a benchmark or a study.
 **No `the honest part`, no `this is the part`.** These spend a clause announcing
 that a point is coming, then make the point. That is one clause of delay per
 occurrence, paid by every reader. The same objection applies to "it should be
-noted that" and "at the end of the day", which no one associates with machines.
+noted that" and "at the end of the day," which no one associates with machines.
+
+**AP mechanical punctuation.** A hyphen after an -ly adverb, a comma left
+outside a closing quotation mark, a comma before Jr. These come from the AP
+Stylebook of 1960 and predate every language model by more than half a century.
+They are here because a regular expression can settle them outright. AP's
+serial-comma and roman-numeral rules are not here, because it cannot.
 
 **No stacked headings.** A heading is a promise of a new subject. Four headings
 on one change asks the reader to hold four subjects that turn out to be one.

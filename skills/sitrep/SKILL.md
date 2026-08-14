@@ -63,7 +63,7 @@ earlier, say so before you say what you fixed.
 
 **3. Every claim carries its evidence on the same line.** A number, a command
 output, a quoted line. "The homepage had no links" is an assertion. "anchors on
-the homepage: 0" is a finding. Never write "probably", "likely the cause" or
+the homepage: 0" is a finding. Never write "probably," "likely the cause" or
 "seems to be" in FINDINGS; those belong in ASSESSMENT with the confidence named.
 
 **4. Name the confidence.** Confirmed means you ran it and saw it. Likely means
@@ -84,8 +84,8 @@ not checked X, that would take an hour" is an hour you should have spent.
 
 ## Screenshots
 
-A screenshot means "look at this and tell me what to do", not "describe this
-back to me".
+A screenshot means "look at this and tell me what to do," not "describe this
+back to me."
 
 - Read what is on it. Do not recite it back; they can see it.
 - Lead with what it means or what is wrong.

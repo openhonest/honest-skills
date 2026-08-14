@@ -91,8 +91,12 @@ def analyse_message(raw: str, source: str = "-") -> dict:
         "reason": ("odd count, so one is stray" if dashes % 2
                    else "even count, check they are paired"),
     }
+    # Scan the prose, not the code spans. A commit that fixes a hyphenated -ly
+    # adverb has to name the thing it fixed, and a checker that cannot tell a
+    # mention from a use makes its own defects unreportable.
+    prose = clarity.strip_furniture(text)
     for key, pats in clarity.WORD_CLASSES:
-        hits = [h for p in pats for h in clarity.scan(p, text)]
+        hits = [h for p in pats for h in clarity.scan(p, prose)]
         checks[key] = {"verdict": "fail" if hits else "pass", "gating": True,
                        "count": len(hits), "found": sorted(set(hits))}
 

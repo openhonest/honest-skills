@@ -177,7 +177,7 @@ def test_no_em_dash_section_when_there_are_none(tmp_path):
         ("This is clearly and obviously the correct answer to give.", "HEDGES", "clearly"),
         ("It was very significantly better than the previous attempt.", "INTENSIFIERS", "very"),
         ("Then comes the honest part, where the failure gets published.", "AI TELLS", "honest part"),
-        ("The needle did not move at all under the sharper test today.", "BANNED WORDS", "move"),
+        ("The badly-damaged file was recovered from last night's backup.", "AP PUNCTUATION", "badly-damaged"),
     ],
 )
 def test_each_word_class_is_reported(tmp_path, text, label, needle):
@@ -190,7 +190,7 @@ def test_clean_prose_reports_no_word_classes(tmp_path):
     text = ("The homepage carried no links. A crawler arrived and left again. "
             "I added twenty links to the canonical pages.")
     _, out = run(text, tmp_path)
-    for label in ("HEDGES", "INTENSIFIERS", "AI TELLS", "BANNED WORDS"):
+    for label in ("HEDGES", "INTENSIFIERS", "AI TELLS", "AP PUNCTUATION"):
         assert label not in out
 
 
@@ -274,7 +274,7 @@ def test_every_check_is_present_even_when_it_passes():
     from 'never ran'. That distinction is the whole point of the format."""
     checks = clarity.analyse(IN_BAND)["checks"]
     expected = {"first_sentence", "headings", "long_sentences", "em_dashes",
-                "hedges", "intensifiers", "tells", "banned_words"}
+                "hedges", "intensifiers", "tells", "ap_mechanics"}
     assert set(checks) == expected
     assert all("verdict" in c for c in checks.values())
 
@@ -446,7 +446,7 @@ def test_text_output_names_each_file_when_there_are_several(tmp_path):
     b = write(tmp_path, "b.md", IN_BAND)
     out = clarity.render_run(clarity.analyse_paths([a, b]))
     assert f"=== {a}" in out and f"=== {b}" in out
-    assert "2 files: 2 in band, 0 out of band, 0 unreadable" in out
+    assert "2 files: 2 clean, 0 failed a gate, 0 unreadable" in out
 
 
 def test_text_output_does_not_name_a_single_file(tmp_path):
@@ -486,7 +486,7 @@ CLEAN = ("The daily report showed no traffic for two of the sites since Tuesday 
          "rejected without a warning. I issued a replacement token and the counts "
          "recovered on the same afternoon.")
 HEDGED = ("The result was clearly and obviously very significant indeed today, "
-          "and the needle did move sharply.")
+          "and the reading did not budge at all.")
 
 
 def test_word_failure_sets_exit_one_even_when_index_is_in_band():
@@ -503,7 +503,7 @@ def test_clean_prose_in_band_exits_zero():
 
 def test_gating_failures_names_every_failing_gate_and_nothing_else():
     r = clarity.analyse(HEDGED)
-    assert set(r["gating_failures"]) == {"hedges", "intensifiers", "banned_words"}
+    assert set(r["gating_failures"]) == {"hedges", "intensifiers"}
     assert all(r["checks"][k]["verdict"] == "fail" for k in r["gating_failures"])
 
 
@@ -549,3 +549,77 @@ def test_frontmatter_is_only_stripped_at_the_top(tmp_path):
     with_rule = clarity.analyse(CLEAN + body + CLEAN)["counts"]["words"]
     without = clarity.analyse(CLEAN + "\n\n" + CLEAN)["counts"]["words"]
     assert with_rule - without == 9, "the text between mid-document rules vanished"
+
+
+# --- AP mechanical punctuation ----------------------------------------------
+#
+# AP Stylebook 1960, the first joint AP/UPI edition. Only rules a regular
+# expression can settle outright are here; the two it cannot are asserted absent
+# below, because a check that flags correct prose gets turned off, and it takes
+# the checks that were worth having with it.
+
+@pytest.mark.parametrize("text, found", [
+    ("The badly-damaged file came back from last night's backup.", "badly-damaged"),
+    ("The newly-chosen chair opened the meeting at eight this morning.", "newly-chosen"),
+    ('He called the work "exacting", then filed the report away.', '",'),
+    ('She read it aloud, said "that settles it". Then she left.', '".'),
+    ("The contract named John Jones, Jr. as the sole buyer.", ", Jr."),
+    ("The filing listed Smith, & Co. as the parent company.", ", & "),
+    ("The week-end release reached a world-wide audience.", "week-end"),
+])
+def test_ap_defects_are_caught(tmp_path, text, found):
+    code, out = run(text, tmp_path)
+    assert code == 1
+    assert "AP PUNCTUATION" in out and found in out
+
+
+@pytest.mark.parametrize("text", [
+    "The badly damaged file came back from last night's backup.",
+    'He called the work "exacting," then filed the report away.',
+    "The contract named John Jones Jr. as the sole buyer of the land.",
+    "The filing listed Smith & Co. as the parent company of record.",
+    "The weekend release reached a worldwide audience without incident.",
+])
+def test_correct_ap_forms_are_left_alone(tmp_path, text):
+    _, out = run(text, tmp_path)
+    assert "AP PUNCTUATION" not in out
+
+
+def test_the_pronoun_I_after_a_comma_is_not_a_roman_numeral(tmp_path):
+    """AP also bans the comma before a roman numeral suffix. That half is left
+    out: these patterns ignore case, so "III" and ", I ran it" are the same
+    string to the check. Flagging the commonest pronoun in English to catch
+    "John Jones, III" is a trade no one would take."""
+    _, out = run("The build broke, I ran the query again, and it came back clean.",
+                 tmp_path)
+    assert "AP PUNCTUATION" not in out
+
+
+def test_the_serial_comma_rule_is_deliberately_absent(tmp_path):
+    """AP bans the comma before the final "and" in a list, but keeps it where
+    both halves are full clauses. Telling those apart needs to parse the
+    sentence, so the rule is left to the writer rather than guessed at."""
+    listed = "The report named the date, the host, and the failing check."
+    clauses = "Fish abounded in the lake, and the shore was lined with deer."
+    for text in (listed, clauses):
+        assert "AP PUNCTUATION" not in run(text, tmp_path)[1]
+
+
+def test_the_summary_names_the_gate_not_the_index(tmp_path):
+    """"Out of band" named one of the two ways to fail, so a file scoring 26
+    that failed four word checks was reported as unreadable prose."""
+    a, b = tmp_path / "a.md", tmp_path / "b.md"
+    a.write_text(IN_BAND)
+    b.write_text(IN_BAND + " The result was clearly the right one to pick.")
+    argv = sys.argv
+    sys.argv = ["clarity.py", str(a), str(b)]
+    buf = io.StringIO()
+    try:
+        with redirect_stdout(buf):
+            code = clarity.main()
+    finally:
+        sys.argv = argv
+    out = buf.getvalue()
+    assert code == 1
+    assert "2 files: 1 clean, 1 failed a gate, 0 unreadable" in out
+    assert "out of band" not in out

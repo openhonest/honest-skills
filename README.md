@@ -20,7 +20,7 @@ Apache 2.0. No dependencies.
 Rules with an operation get followed. Rules stated as advice get lost.
 
 An agent given "count the em dashes" obeyed for weeks. The same agent, given
-"put the bottom line first", broke it repeatedly, because there was nothing to
+"put the bottom line first," broke it repeatedly, because there was nothing to
 run. It wrote a five-section report whose second sentence was its own debugging
 noise and whose admission of error sat fourth.
 
@@ -60,7 +60,19 @@ That output is real. It is the report described above, and the first-sentence
 line is what identified the fault in seconds.
 
 It also flags stray em dashes, hedging adverbs, intensifiers, stacked headings
-and sentences over twenty words.
+and sentences over twenty words, plus the mechanical punctuation rules from the
+AP Stylebook of 1960 that a regular expression can settle outright: a hyphen
+after an -ly adverb, a comma or period left outside a closing quotation mark, a
+comma before Jr. or an ampersand, and `week-end` for weekend.
+
+Two AP rules are deliberately absent, and their absence is the same argument as
+`first_sentence`. AP bans the comma before the final "and" in a series but keeps
+it where both halves are full clauses, and telling those apart needs to parse
+the sentence. AP also bans the comma before a roman-numeral suffix, and these
+patterns ignore case, so `III` and `, I ran the query` are one string to the
+check. Flagging the commonest pronoun in English to catch `John Jones, III` is a
+trade no one would take. A check that flags correct prose gets turned off, and
+it takes the checks that were worth having with it.
 
 Any number of files can be given, which is what a pre-commit hook passes:
 
@@ -100,15 +112,15 @@ pass.
 
 Every check is present whether it passed or failed. Dropping a passing check
 would save bytes and cost a consumer the ability to tell "passed" from "never
-ran", which is the failure this project exists to name.
+ran," which is the failure this project exists to name.
 
 `first_sentence` returns `unassessed` with a reason. The checker prints your
 opening line back because that is all it can honestly do; a machine cannot tell
 a buried lead from a deliberate one. Most linters emit pass or fail only, so a
 rule they cannot judge gets dropped or faked.
 
-Exit codes separate the ways of failing. `0` every file in band, `1` one or more
-out of band, `2` one or more could not be read. Worst wins, because a run that
+Exit codes separate the ways of failing. `0` every file clean, `1` one or more
+failed a gate, `2` one or more could not be read. Worst wins, because a run that
 could not read half its input has not passed, and a hook that collapsed those
 would hide a broken setup behind a writing complaint.
 
@@ -170,7 +182,7 @@ indicators need to execute the test suite rather than read it:
 
 Without a venv holding pytest, L1.19 and L1.20 report `No data`. That is not the
 same as reporting zero, and the analyzer says so: it distinguishes "we did not
-run it" from "we could not run it here". Current results on a prepared clone:
+run it" from "we could not run it here." Current results on a prepared clone:
 
 ```
 L1.18   0 of 17 functions reference external mutable state
