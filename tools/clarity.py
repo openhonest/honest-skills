@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from collections import Counter
 
 VOWELS = "aeiouy"
 BAND = (20, 40)
@@ -47,6 +48,20 @@ GATING = ("em_dashes", "hedges", "intensifiers", "tells", "ap_mechanics")
 # one: a project that judges others for overclaiming cannot write "clearly".
 HEDGES = ("clearly", "obviously", "certainly", "undoubtedly", "arguably",
           "essentially", "basically", "fundamentally", "notably", "importantly")
+# Phrases that contain a hedge word and are not hedges. "Almost certainly" is
+# calibration, the opposite of a confidence the evidence has not earned:
+# flagging it pushes a writer toward the stronger claim. "Notably" preceded by
+# an opening bracket is naming an instance, not asserting confidence. Found by
+# running the checker over a book manuscript, which is the first corpus it met
+# that its author had not written.
+# Each entry names the hedge word it excuses, so the pairing is data rather
+# than something inferred by substring matching at run time.
+HEDGE_EXEMPT = (
+    ("certainly", r"\balmost certainly\b"),
+    ("certainly", r"\bnot certainly\b"),
+    ("notably", r"[(\[]\s*notably\b"),
+    ("notably", r"\bmost notably\b"),
+)
 INTENSIFIERS = ("very", "really", "quite", "extremely", "incredibly",
                 "significantly", "substantially", "highly", "vastly", "utterly")
 # Filler that announces a point instead of making it.
@@ -153,6 +168,17 @@ def words_in(text: str) -> list[str]:
     return re.findall(r"[A-Za-z][A-Za-z'\-]*", text)
 
 
+def spend(hits: list[str], budget: "Counter[str]") -> list[str]:
+    """Drop hits the budget covers, one each, and keep the rest."""
+    kept = []
+    for h in hits:
+        if budget[h.lower()]:
+            budget[h.lower()] -= 1
+        else:
+            kept.append(h)
+    return kept
+
+
 def analyse(raw: str, source: str = "-") -> dict:
     """Measure a draft. Pure: no printing, no exit, no file access.
 
@@ -205,8 +231,13 @@ def analyse(raw: str, source: str = "-") -> dict:
                        else "even count, check they are paired"),
         },
     }
+    # One excused hit per exempting phrase, not blanket amnesty for the word.
+    # "Almost certainly X, and certainly Y" still reports the second.
+    excused = Counter(w for w, pat in HEDGE_EXEMPT for _ in scan(pat, prose))
     for key, pats in WORD_CLASSES:
         hits = [h for p in pats for h in scan(p, prose)]
+        if key == "hedges":
+            hits = spend(hits, excused.copy())
         checks[key] = {"verdict": "fail" if hits else "pass",
                        "count": len(hits), "found": sorted(set(hits))}
     for key, check in checks.items():

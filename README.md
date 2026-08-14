@@ -189,9 +189,9 @@ same as reporting zero, and the analyzer says so: it distinguishes "we did not
 run it" from "we could not run it here." Current results on a prepared clone:
 
 ```
-L1.18   0 of 17 functions reference external mutable state
+L1.18   0 of 18 functions reference external mutable state
 L1.18b  resolvable fraction 1.0
-L1.19   64 of 64 decision branches exercised
+L1.19   72 of 72 decision branches exercised
 L1.20   5 of 5 randomized-order runs passed
 ```
 

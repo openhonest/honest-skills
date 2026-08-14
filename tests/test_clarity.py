@@ -654,3 +654,36 @@ def test_the_exclusion_list_is_documented_as_incomplete():
     src = inspect.getsource(clarity)
     assert "incomplete" in src.lower()
     assert len(clarity.NOT_ADVERBS.split("|")) > 20
+
+
+# --- calibration is not overclaim ---------------------------------------------
+
+def test_almost_certainly_is_calibration_not_a_hedge(tmp_path):
+    """"Certainly X" asserts a confidence the evidence has not earned.
+    "Almost certainly X" says the opposite: I did not measure this. Flagging it
+    pushes a writer toward the stronger claim, which inverts the rule."""
+    _, out = run("The programmers were almost certainly competent in their own "
+                 "codebases, and the tooling was adequate for the work.", tmp_path)
+    assert "HEDGES" not in out
+
+
+def test_the_bare_hedge_is_still_caught(tmp_path):
+    code, out = run("The programmers were certainly competent in their own "
+                    "codebases, and the tooling was adequate for the work.", tmp_path)
+    assert code == 1 and "certainly" in out
+
+
+def test_one_exemption_does_not_excuse_a_second_bare_hedge():
+    """Exemptions are consumed one per phrase, not applied to the word
+    everywhere. Otherwise a single calibrated use would license the rest."""
+    r = clarity.analyse("It is almost certainly true, and it is certainly the "
+                        "reason the whole run failed again this morning.")
+    assert r["checks"]["hedges"]["count"] == 1
+
+
+def test_notably_naming_an_instance_is_not_a_hedge(tmp_path):
+    """In "(notably XP and Scrum)" the word names an instance. It asserts no
+    confidence about evidence, which is what the hedge rule is for."""
+    _, out = run("The anti-waterfall patterns of the late 1990s (notably XP and "
+                 "Scrum) reshaped how teams organized their delivery work.", tmp_path)
+    assert "HEDGES" not in out
