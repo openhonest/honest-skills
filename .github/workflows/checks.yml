@@ -1,0 +1,49 @@
+# Two gates, both of which this repository applies to other people.
+#
+# The tests gate the tools. The prose gate runs the repository's own checker
+# over its own Markdown, because a project that publishes a writing standard
+# and does not meet it has published an opinion rather than a tool.
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is what macOS ships. The tools claim to be stdlib-only and to
+        # run wherever Python does, so the oldest supported version is part
+        # of the claim rather than an afterthought.
+        python-version: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install pytest pytest-randomly coverage
+      - name: tests
+        run: python -m pytest tests/ -q
+      - name: branch coverage must stay at 100
+        if: matrix.python-version == '3.13'
+        run: |
+          coverage run --branch --source=tools -m pytest tests/ -q
+          coverage report --fail-under=100 --show-missing
+
+  prose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: the checker scores its own repository
+        run: python tools/clarity.py README.md docs/*.md skills/*/SKILL.md

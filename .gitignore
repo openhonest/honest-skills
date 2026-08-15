@@ -23,3 +23,12 @@ __pycache__/
 .pytest_cache/
 .coverage
 coverage.json
+
+# Audit output. Running the Slop Audit or Umbra against this repository drops
+# reports here. They are a snapshot of one run on one machine, they go stale
+# the moment the code changes, and a stale grade checked into a repository is
+# worse than no grade. Run the tools; do not commit what they print.
+umbra-report.*
+slop-report*
+audit-report*
+.slop-audit/
