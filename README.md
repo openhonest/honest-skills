@@ -135,6 +135,27 @@ failed a gate, `2` one or more could not be read. Worst wins, because a run that
 could not read half its input has not passed, and a hook that collapsed those
 would hide a broken setup behind a writing complaint.
 
+## Over MCP, for editors that are not Claude Code
+
+`.mcp.json` declares a server exposing the same three checkers as MCP tools:
+`check_decision_brief`, `check_prose` and `check_commit_message`. Installing
+the plugin is the whole setup.
+
+The hook and the server do different jobs. The hook fires whether or not the
+agent cooperates, and it only reaches Claude Code. The server is deliberate,
+answering "check this before I send it," and it reaches anything speaking MCP.
+
+It is stdlib only, and that is a decision rather than an omission. It ships to
+machines we do not control, every dependency is a thing that can be missing or
+pinned wrong, and a checker that will not start is worse than no checker,
+because the silence reads as a pass. JSON-RPC over stdio is a hundred lines.
+
+It holds no analysis of its own. Every verdict comes from the three checkers,
+called directly, and a test fails if a regular expression appears in the server
+at all. Each reply leads with the verdict, then the report, then the JSON, so a
+model acts on the first line and a client can still count the checks that were
+never assessed.
+
 ## The write-time hook
 
 Installing the plugin adds a `PostToolUse` hook. It runs after every Write and

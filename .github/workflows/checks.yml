@@ -35,7 +35,7 @@ jobs:
       - name: branch coverage must stay at 100
         if: matrix.python-version == '3.13'
         run: |
-          coverage run --branch --source=tools -m pytest tests/ -q
+          coverage run --branch --source=tools,mcp,hooks -m pytest tests/ -q
           coverage report --fail-under=100 --show-missing
 
   prose:
