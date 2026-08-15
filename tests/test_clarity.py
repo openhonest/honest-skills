@@ -266,13 +266,13 @@ def test_analyse_returns_a_result_and_prints_nothing(capsys):
 
 
 def test_analyse_is_deterministic():
-    assert clarity.analyse(IN_BAND) == clarity.analyse(IN_BAND)
+    assert clarity.analyse(IN_BAND, "-") == clarity.analyse(IN_BAND, "-")
 
 
 def test_every_check_is_present_even_when_it_passes():
     """Omitting a passing check costs a consumer the ability to tell 'passed'
     from 'never ran'. That distinction is the whole point of the format."""
-    checks = clarity.analyse(IN_BAND)["checks"]
+    checks = clarity.analyse(IN_BAND, "-")["checks"]
     expected = {"first_sentence", "headings", "long_sentences", "em_dashes",
                 "hedges", "intensifiers", "tells", "ap_mechanics"}
     assert set(checks) == expected
@@ -280,26 +280,26 @@ def test_every_check_is_present_even_when_it_passes():
 
 
 def test_first_sentence_is_unassessed_with_a_stated_reason():
-    c = clarity.analyse(IN_BAND)["checks"]["first_sentence"]
+    c = clarity.analyse(IN_BAND, "-")["checks"]["first_sentence"]
     assert c["verdict"] == "unassessed"
     assert c["reason"]
     assert c["text"].startswith("Every crawler")
 
 
 def test_exit_code_is_carried_in_the_payload():
-    assert clarity.analyse(IN_BAND)["exit"] == 0
-    assert clarity.analyse("It ran. It broke. I fixed it.")["exit"] == 1
+    assert clarity.analyse(IN_BAND, "-")["exit"] == 0
+    assert clarity.analyse("It ran. It broke. I fixed it.", "-")["exit"] == 1
 
 
 def test_nothing_to_measure_is_a_verdict_not_an_error():
-    r = clarity.analyse("\n\n")
+    r = clarity.analyse("\n\n", "-")
     assert r["verdict"] == "nothing_to_measure"
     assert r["exit"] == 0
     assert r["index"] is None
 
 
 def test_failing_checks_carry_what_was_found():
-    r = clarity.analyse("It is clearly and obviously very good indeed today.")
+    r = clarity.analyse("It is clearly and obviously very good indeed today.", "-")
     assert r["checks"]["hedges"]["verdict"] == "fail"
     assert "clearly" in r["checks"]["hedges"]["found"]
     assert r["checks"]["intensifiers"]["found"] == ["very"]
@@ -406,7 +406,7 @@ def write(tmp_path, name, text):
 
 def test_one_file_still_arrives_as_a_list_of_one(tmp_path):
     """A consumer should never branch on how many arguments it passed."""
-    run = clarity.analyse_paths([write(tmp_path, "a.md", IN_BAND)])
+    run = clarity.analyse_paths([write(tmp_path, "a.md", IN_BAND)], None)
     assert run["schema"] == 2
     assert run["counts"]["files"] == 1
     assert isinstance(run["files"], list)
@@ -416,7 +416,7 @@ def test_every_path_is_measured_not_just_the_first(tmp_path):
     run = clarity.analyse_paths([
         write(tmp_path, "a.md", IN_BAND),
         write(tmp_path, "b.md", "It ran. It broke. I fixed it. It runs."),
-    ])
+    ], None)
     assert run["counts"] == {"files": 2, "passed": 1, "failed": 1, "unreadable": 0}
     assert [f["verdict"] for f in run["files"]] == ["in_band", "too_abrupt"]
 
@@ -425,17 +425,17 @@ def test_worst_result_wins(tmp_path):
     good = write(tmp_path, "a.md", IN_BAND)
     bad = write(tmp_path, "b.md", "It ran. It broke. I fixed it. It runs.")
     missing = str(tmp_path / "gone.md")
-    assert clarity.analyse_paths([good])["exit"] == 0
-    assert clarity.analyse_paths([good, bad])["exit"] == 1
-    assert clarity.analyse_paths([good, missing])["exit"] == 2
+    assert clarity.analyse_paths([good], None)["exit"] == 0
+    assert clarity.analyse_paths([good, bad], None)["exit"] == 1
+    assert clarity.analyse_paths([good, missing], None)["exit"] == 2
     # An unreadable file outranks a merely out-of-band one: a run that could
     # not read half its input has not passed.
-    assert clarity.analyse_paths([bad, missing])["exit"] == 2
+    assert clarity.analyse_paths([bad, missing], None)["exit"] == 2
 
 
 def test_one_unreadable_file_does_not_stop_the_others(tmp_path):
     run = clarity.analyse_paths([str(tmp_path / "gone.md"),
-                                 write(tmp_path, "a.md", IN_BAND)])
+                                 write(tmp_path, "a.md", IN_BAND)], None)
     assert run["counts"]["unreadable"] == 1
     assert run["counts"]["passed"] == 1
     assert run["files"][1]["verdict"] == "in_band"
@@ -444,13 +444,13 @@ def test_one_unreadable_file_does_not_stop_the_others(tmp_path):
 def test_text_output_names_each_file_when_there_are_several(tmp_path):
     a = write(tmp_path, "a.md", IN_BAND)
     b = write(tmp_path, "b.md", IN_BAND)
-    out = clarity.render_run(clarity.analyse_paths([a, b]))
+    out = clarity.render_run(clarity.analyse_paths([a, b], None))
     assert f"=== {a}" in out and f"=== {b}" in out
     assert "2 files: 2 clean, 0 failed a gate, 0 unreadable" in out
 
 
 def test_text_output_does_not_name_a_single_file(tmp_path):
-    out = clarity.render_run(clarity.analyse_paths([write(tmp_path, "a.md", IN_BAND)]))
+    out = clarity.render_run(clarity.analyse_paths([write(tmp_path, "a.md", IN_BAND)], None))
     assert "===" not in out
     assert "1 files" not in out
 
@@ -490,25 +490,25 @@ HEDGED = ("The result was clearly and obviously very significant indeed today, "
 
 
 def test_word_failure_sets_exit_one_even_when_index_is_in_band():
-    r = clarity.analyse(HEDGED)
+    r = clarity.analyse(HEDGED, "-")
     assert r["verdict"] == "in_band"
     assert r["gating_failures"], "in band but nothing gated, so nothing gates"
     assert r["exit"] == 1
 
 
 def test_clean_prose_in_band_exits_zero():
-    r = clarity.analyse(CLEAN)
+    r = clarity.analyse(CLEAN, "-")
     assert (r["verdict"], r["gating_failures"], r["exit"]) == ("in_band", [], 0)
 
 
 def test_gating_failures_names_every_failing_gate_and_nothing_else():
-    r = clarity.analyse(HEDGED)
+    r = clarity.analyse(HEDGED, "-")
     assert set(r["gating_failures"]) == {"hedges", "intensifiers"}
     assert all(r["checks"][k]["verdict"] == "fail" for k in r["gating_failures"])
 
 
 def test_every_check_declares_whether_it_gates():
-    checks = clarity.analyse(CLEAN)["checks"]
+    checks = clarity.analyse(CLEAN, "-")["checks"]
     assert all("gating" in c for c in checks.values())
     assert {k for k, c in checks.items() if c["gating"]} == set(clarity.GATING)
 
@@ -522,7 +522,7 @@ def test_judgement_calls_are_reported_and_never_gate():
     """
     for key in ("first_sentence", "headings", "long_sentences"):
         assert key not in clarity.GATING
-    r = clarity.analyse("# A\n## B\n### C\n" + CLEAN)
+    r = clarity.analyse("# A\n## B\n### C\n" + CLEAN, "-")
     assert r["checks"]["headings"]["verdict"] == "fail"
     assert r["exit"] == 0
 
@@ -546,8 +546,8 @@ def test_frontmatter_is_only_stripped_at_the_top(tmp_path):
     """A horizontal rule mid-document is prose furniture, not metadata. Treating
     it as frontmatter would silently delete the body between two rules."""
     body = "\n\n---\nThe collector runs on a schedule of its own.\n---\n\n"
-    with_rule = clarity.analyse(CLEAN + body + CLEAN)["counts"]["words"]
-    without = clarity.analyse(CLEAN + "\n\n" + CLEAN)["counts"]["words"]
+    with_rule = clarity.analyse(CLEAN + body + CLEAN, "-")["counts"]["words"]
+    without = clarity.analyse(CLEAN + "\n\n" + CLEAN, "-")["counts"]["words"]
     assert with_rule - without == 9, "the text between mid-document rules vanished"
 
 
@@ -677,7 +677,7 @@ def test_one_exemption_does_not_excuse_a_second_bare_hedge():
     """Exemptions are consumed one per phrase, not applied to the word
     everywhere. Otherwise a single calibrated use would license the rest."""
     r = clarity.analyse("It is almost certainly true, and it is certainly the "
-                        "reason the whole run failed again this morning.")
+                        "reason the whole run failed again this morning.", "-")
     assert r["checks"]["hedges"]["count"] == 1
 
 

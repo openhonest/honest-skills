@@ -179,8 +179,13 @@ def spend(hits: list[str], budget: "Counter[str]") -> list[str]:
     return kept
 
 
-def analyse(raw: str, source: str = "-") -> dict:
+def analyse(raw: str, source: str) -> dict:
     """Measure a draft. Pure: no printing, no exit, no file access.
+
+    `source` has no default on purpose. A default of "-" would mean stdin, and
+    the result would then be unable to distinguish text that came from stdin
+    from text whose caller never said where it came from. That is rule 14 of
+    the standard this repository publishes, and the tools were breaking it.
 
     Every check appears in the result whether it passed or failed. Omitting a
     passing check saves bytes and costs a consumer the ability to tell "passed"
@@ -329,15 +334,19 @@ def unreadable(source: str, error: str) -> dict:
             "counts": {}, "measures": {}, "checks": {}}
 
 
-def analyse_paths(paths: list[str], stdin_text: str | None = None) -> dict:
+def analyse_paths(paths: list[str], stdin_text: str | None) -> dict:
     """Measure every path given, or stdin when none is.
+
+    `stdin_text` has no default for the same reason as `analyse`. The caller
+    knows whether it read stdin; making it say so keeps that decision visible
+    at the boundary rather than absorbed by an `=`.
 
     The shape does not change with the number of files. A consumer should never
     have to branch on how many arguments it happened to pass, so one file still
     arrives as a list of one.
     """
     if not paths:
-        files = [analyse(stdin_text or "", "-")]
+        files = [analyse(stdin_text or "", "-")]   # "-" is the caller saying stdin
     else:
         files = []
         for path in paths:

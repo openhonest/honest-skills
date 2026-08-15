@@ -49,7 +49,10 @@ def strip_comments(raw: str) -> str:
     return "\n".join(l for l in raw.splitlines() if not l.startswith("#"))
 
 
-def analyse_message(raw: str, source: str = "-") -> dict:
+def analyse_message(raw: str, source: str) -> dict:
+    """`source` has no default: see the note in clarity.analyse. A default
+    would make a message read from stdin indistinguishable from one whose
+    caller never said."""
     text = strip_comments(raw).strip()
     lines = text.splitlines()
     subject = lines[0].strip() if lines else ""

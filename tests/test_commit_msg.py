@@ -65,10 +65,10 @@ def test_an_over_long_subject_fails_with_its_length(tmp_path):
 
 
 def test_a_subject_at_the_limit_passes(tmp_path):
-    r = commit_msg.analyse_message("x" * commit_msg.SUBJECT_LIMIT)
+    r = commit_msg.analyse_message("x" * commit_msg.SUBJECT_LIMIT, "-")
     assert r["checks"]["subject_length"]["verdict"] == "pass"
     assert commit_msg.analyse_message(
-        "x" * (commit_msg.SUBJECT_LIMIT + 1))["checks"]["subject_length"]["verdict"] == "fail"
+        "x" * (commit_msg.SUBJECT_LIMIT + 1), "-")["checks"]["subject_length"]["verdict"] == "fail"
 
 
 def test_a_missing_blank_line_after_the_subject_fails(tmp_path):
@@ -115,14 +115,14 @@ def test_git_comment_lines_are_not_scored(tmp_path):
 
 
 def test_a_comment_line_does_not_count_as_the_blank_line(tmp_path):
-    r = commit_msg.analyse_message("Fix the token\n# a comment\nA body line.\n")
+    r = commit_msg.analyse_message("Fix the token\n# a comment\nA body line.\n", "-")
     assert r["checks"]["blank_line_after_subject"]["verdict"] == "fail"
 
 
 # --- the checks it refuses to make ------------------------------------------
 
 def test_the_structural_checks_are_reported_and_never_gate():
-    checks = commit_msg.analyse_message(GOOD)["checks"]
+    checks = commit_msg.analyse_message(GOOD, "-")["checks"]
     for key in ("subject_carries_the_change", "bad_news_first"):
         assert checks[key]["verdict"] == "unassessed"
         assert checks[key]["gating"] is False
@@ -132,12 +132,12 @@ def test_the_structural_checks_are_reported_and_never_gate():
 def test_the_clarity_index_is_not_applied():
     """A dozen-word subject is too small a sample for the index to mean
     anything, so no index appears rather than a number that looks measured."""
-    assert "index" not in commit_msg.analyse_message(GOOD)
+    assert "index" not in commit_msg.analyse_message(GOOD, "-")
 
 
 def test_every_check_declares_whether_it_gates():
     assert all("gating" in c
-               for c in commit_msg.analyse_message(GOOD)["checks"].values())
+               for c in commit_msg.analyse_message(GOOD, "-")["checks"].values())
 
 
 # --- output shape -----------------------------------------------------------
@@ -152,7 +152,7 @@ def test_json_carries_every_check_whether_it_passed_or_failed(tmp_path):
 
 
 def test_gating_failures_lists_only_gating_checks(tmp_path):
-    r = commit_msg.analyse_message("Clearly fix the very significant token")
+    r = commit_msg.analyse_message("Clearly fix the very significant token", "-")
     assert set(r["gating_failures"]) == {"hedges", "intensifiers"}
     assert all(r["checks"][k]["gating"] for k in r["gating_failures"])
 
