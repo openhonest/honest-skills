@@ -16,6 +16,8 @@ report what it cannot do.
   advice.
 - **Three pre-commit hooks** run the same checks over your Markdown and your
   commit messages, and refuse to gate on anything a machine cannot judge.
+- **A write-time hook** checks every file the moment an agent writes it, and
+  says nothing at all when the file is fine.
 
 Apache 2.0. No dependencies.
 
@@ -127,6 +129,51 @@ Exit codes separate the ways of failing. `0` every file clean, `1` one or more
 failed a gate, `2` one or more could not be read. Worst wins, because a run that
 could not read half its input has not passed, and a hook that collapsed those
 would hide a broken setup behind a writing complaint.
+
+## The write-time hook
+
+Installing the plugin adds a `PostToolUse` hook. It runs after every Write and
+Edit, and on a clean file it produces nothing: no tick, no summary, no line in
+the transcript. When something is wrong it puts the finding in front of the
+model that did the writing.
+
+The silence is the design. A check that speaks on every write is noise, and
+noise gets uninstalled inside a day, which is a worse outcome than never being
+installed at all. The andon cord does not display a score to the worker; it is
+silent, and then it is not.
+
+### Why a hook rather than a tool the agent calls
+
+An agent has no appetite for quality. It emits the most probable continuation.
+An instruction to run a check is advice, and advice degrades over a long
+session and gets skipped when inconvenient. Worse, an agent that stops calling
+produces no output, so the silence reads as health.
+
+A hook fires whether or not the agent cooperates. That is the whole point: it
+turns the check from something the agent might remember into a step in the loop.
+
+### What it checks, and what it refuses to
+
+Two checks run with no dependency at all: whether the file has passed a thousand
+lines, and trailing-whitespace density against the Slop Audit's published band.
+Both are exact and neither has a rival implementation to disagree with.
+
+For the mutable-state ratio it shells out to `slop-audit-l1` if that is
+installed, and reports `UNMEASURED` if it is not. **It does not implement the
+ratio itself.** The authoritative definition lives in the Honest Framework with
+its bound-literal amendment, and a second implementation under the same name is
+how two tools come to disagree while both claim the standard. There is a test
+that fails if anyone adds `import ast` to the hook.
+
+`UNMEASURED` is reported once per session rather than once per write, because
+repeating a fact you cannot act on differently is how an alarm becomes
+wallpaper. It is reported at all because not checked is not the same as passed,
+and a tool that stays quiet about what it did not do is the failure this project
+exists to name.
+
+This is not the Slop Audit. It is the part of it that means anything for one
+file at one moment, which is four indicators out of twenty. Run the full audit
+on a repository; run this while you write.
 
 ## As pre-commit hooks
 
