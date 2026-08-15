@@ -36,8 +36,26 @@ definition lives in the Honest Framework's L1.18 with its bound-literal
 amendment, and a second implementation under the same name is how two tools
 come to disagree while both claiming the standard.
 
-Where the analyzer is absent, the answer is UNMEASURED and it says so once.
-"Not checked" is not "passed".
+AN ABSENCE IS NOT A FINDING ABOUT YOUR FILE
+
+The first version announced the missing analyzer as a finding, so a clean file
+produced "1 finding(s) in t.py" when there was nothing in t.py at all. It was
+reporting on itself and labelling the report as an observation of the file.
+That is the category error this project exists to name, and every new install
+met it on the first write, because nobody has the analyzer.
+
+The rule that replaced it: an absence is only worth saying alongside a
+presence. A findings list that does not declare its coverage is claiming to be
+complete, so every report leads with how many checks ran out of how many. When
+there is nothing to report, there is no list to be incomplete about, and the
+hook is silent.
+
+SILENCE IS NOT A PASS, AND NEVER CLAIMS TO BE
+
+Nothing here ever prints a tick, a score, or the word clean. Silence means
+nothing surfaced. The coverage line on every real report is what keeps that
+honest, because it is impossible to read a finding from this tool without also
+reading what it did not examine.
 """
 from __future__ import annotations
 
@@ -47,7 +65,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 # L1.17 at file scope. The published band is a percentage of files in a
@@ -66,9 +83,14 @@ SOURCE = {".py", ".js", ".jsx", ".ts", ".tsx", ".rs", ".go", ".java", ".rb",
 
 ANALYZER = "slop-audit-l1"
 
+# How many checks this hook has to offer. Reported on every finding, so the
+# reader learns the coverage at the same moment as the content. Three of the
+# Slop Audit's twenty indicators mean anything for one file at one moment.
+CHECKS = 3
 
-def hook_input(raw: str) -> tuple[str, str]:
-    """Return (file_path, session_id). Empty strings when absent.
+
+def hook_input(raw: str) -> str:
+    """Return the file path, or "" when there is not one.
 
     A hook that raises on unexpected input turns every write into an error
     notice. Absent fields are a reason to do nothing, not to complain.
@@ -76,9 +98,8 @@ def hook_input(raw: str) -> tuple[str, str]:
     try:
         d = json.loads(raw)
     except (ValueError, TypeError):
-        return "", ""
-    tool_input = d.get("tool_input") or {}
-    return str(tool_input.get("file_path") or ""), str(d.get("session_id") or "")
+        return ""
+    return str((d.get("tool_input") or {}).get("file_path") or "")
 
 
 def line_count_finding(text: str) -> dict | None:
@@ -103,47 +124,32 @@ def whitespace_finding(text: str) -> dict | None:
             "action": "run the formatter this project already has"}
 
 
-def already_told(session: str) -> bool:
-    """One notice per session about a missing analyzer, not one per write.
+def analyzer_finding(path: str) -> dict | None:
+    """Delegate the mutable-state ratio. Never reimplement it.
 
-    Repeating a fact the reader cannot act on differently the second time is
-    how an alarm becomes wallpaper.
+    A NOT_RUN result is returned rather than suppressed. Whether it reaches the
+    reader is decided in main(), by whether there is anything else to say.
+
+    The session-marker file this used to keep is gone. It existed to stop a
+    notice repeating, and the notice should not have been firing at all.
     """
-    if not session:
-        return True
-    marker = Path(tempfile.gettempdir()) / f"honest-edit-check-{session}.told"
-    if marker.exists():
-        return True
-    try:
-        marker.touch()
-    except OSError:
-        return True
-    return False
-
-
-def analyzer_finding(path: str, session: str) -> dict | None:
-    """Delegate the mutable-state ratio. Never reimplement it."""
     exe = shutil.which(ANALYZER)
     if exe is None:
-        if already_told(session):
-            return None
-        return {"indicator": "L1.18", "verdict": "UNMEASURED",
-                "detail": f"{ANALYZER} is not on PATH, so mutable-state ratio "
-                          f"was not evaluated on this file or any other this session",
-                "action": "install the Slop Audit analyzer, or accept that this "
-                          "check is not running"}
+        return {"indicator": "L1.18", "verdict": "NOT_RUN",
+                "detail": f"{ANALYZER} is not on PATH",
+                "action": "this file was not checked for mutable-state ratio"}
     try:
         r = subprocess.run([exe, path, "--indicators", "18", "--no-exec", "--format", "json"],
                            capture_output=True, text=True, timeout=20)
         data = json.loads(r.stdout)
     except (OSError, subprocess.SubprocessError, ValueError):
-        return {"indicator": "L1.18", "verdict": "UNMEASURED",
+        return {"indicator": "L1.18", "verdict": "NOT_RUN",
                 "detail": "the analyzer ran and its output could not be read",
                 "action": "run it by hand on this file to see why"}
     band = ((data.get("results") or {}).get("L1.18") or {}).get("band")
     value = ((data.get("results") or {}).get("L1.18") or {}).get("value")
     if band is None:
-        return {"indicator": "L1.18", "verdict": "UNMEASURED",
+        return {"indicator": "L1.18", "verdict": "NOT_RUN",
                 "detail": "the analyzer returned no verdict for this file",
                 "action": "this is a gap in the analyzer, not in the file"}
     if str(band).lower() in ("healthy", "clean"):
@@ -154,18 +160,30 @@ def analyzer_finding(path: str, session: str) -> dict | None:
             "caveat": "this threshold is provisional and was set by expert judgment"}
 
 
-def findings_for(path: str, text: str, session: str) -> list[dict]:
-    out = []
-    for f in (line_count_finding(text), whitespace_finding(text),
-              analyzer_finding(path, session)):
-        if f is not None:
-            out.append(f)
-    return out
+def findings_for(path: str, text: str) -> list[dict]:
+    """Every check's result, including the ones that did not run.
+
+    Suppressing a NOT_RUN here would make the coverage count in render()
+    impossible to compute, and the count is the whole of the honesty.
+    """
+    return [f for f in (line_count_finding(text), whitespace_finding(text),
+                        analyzer_finding(path)) if f is not None]
 
 
 def render(path: str, findings: list[dict]) -> str:
+    """The coverage first, then the findings.
+
+    "2 of 3 checks ran" before any content, because a list of findings with no
+    coverage stated is a list claiming to be complete.
+    """
     name = os.path.basename(path)
-    lines = [f"honest-code: {len(findings)} finding(s) in {name}"]
+    # Count what did NOT run and subtract. Counting the findings instead
+    # counts the checks that FIRED, so a check that ran and passed vanished
+    # from the coverage: a file with a real finding and a clean whitespace
+    # check reported "1 of 3 ran" when two had. Under-reporting coverage is a
+    # smaller lie than over-reporting it and it is still a lie.
+    not_run = sum(1 for f in findings if f["verdict"] == "NOT_RUN")
+    lines = [f"honest-code: {CHECKS - not_run} of {CHECKS} checks ran on {name}"]
     for f in findings:
         lines.append(f"  {f['verdict']}  {f['indicator']}  {f['detail']}")
         lines.append(f"      {f['action']}")
@@ -175,7 +193,7 @@ def render(path: str, findings: list[dict]) -> str:
 
 
 def main() -> int:
-    path, session = hook_input(sys.stdin.read())
+    path = hook_input(sys.stdin.read())
     if not path or Path(path).suffix.lower() not in SOURCE:
         return 0
     try:
@@ -185,8 +203,11 @@ def main() -> int:
         # and a hook that reports it teaches the reader to ignore hooks.
         return 0
 
-    findings = findings_for(path, text, session)
-    if not findings:
+    findings = findings_for(path, text)
+    if not any(f["verdict"] != "NOT_RUN" for f in findings):
+        # Nothing surfaced. A check that did not run is not an observation
+        # about this file, and announcing it here would put the tool's own
+        # limitation where a finding about the code belongs.
         return 0                      # silence: exit 0 shows stdout to nobody
 
     print(render(path, findings), file=sys.stderr)

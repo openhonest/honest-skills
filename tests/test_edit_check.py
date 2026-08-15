@@ -1,8 +1,12 @@
 """Tests for the PostToolUse hook.
 
-The hook's whole value is that it says nothing when a file is fine. That
-property is the one most likely to break silently, so most of these assert
+The hook's whole value is that it says nothing when there is nothing to say.
+That property is the one most likely to break silently, so most of these assert
 silence rather than output.
+
+The second group asserts the rule that replaced the first design: an absence is
+not a finding about your file, and a findings list that does not state its
+coverage is claiming to be complete.
 """
 from __future__ import annotations
 
@@ -11,7 +15,6 @@ import io
 import json
 import subprocess
 import sys
-import tempfile
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -24,10 +27,13 @@ edit_check = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(edit_check)
 
 CLEAN = "def f(x):\n    return x + 1\n"
+NO_ANALYZER = {"indicator": "L1.18", "verdict": "NOT_RUN",
+               "detail": "slop-audit-l1 is not on PATH",
+               "action": "this file was not checked for mutable-state ratio"}
 
 
-def payload(path, session="s1"):
-    return json.dumps({"session_id": session, "tool_name": "Write",
+def payload(path):
+    return json.dumps({"session_id": "s1", "tool_name": "Write",
                        "tool_input": {"file_path": str(path)}})
 
 
@@ -36,24 +42,45 @@ def run_hook(raw, monkeypatch):
     err = io.StringIO()
     monkeypatch.setattr(sys, "stdin", io.StringIO(raw))
     monkeypatch.setattr(sys, "stderr", err)
-    code = edit_check.main()
-    return code, err.getvalue()
+    return edit_check.main(), err.getvalue()
+
+
+def no_analyzer(monkeypatch):
+    """The state of every fresh install: the plugin is there, the binary is not."""
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: None)
 
 
 # --- silence, which is the point --------------------------------------------
 
 def test_a_clean_file_produces_no_output_at_all(tmp_path, monkeypatch):
     f = tmp_path / "ok.py"; f.write_text(CLEAN)
-    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p, s: None)
-    code, err = run_hook(payload(f), monkeypatch)
-    assert (code, err) == (0, "")
+    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p: None)
+    assert run_hook(payload(f), monkeypatch) == (0, "")
+
+
+def test_a_fresh_install_is_silent_on_its_first_write(tmp_path, monkeypatch):
+    """The defect this replaced. A user installed the plugin, edited a file,
+    and the first thing the tool said was that a check it wanted was missing.
+    It was reporting on itself and labelling it a finding about the file."""
+    no_analyzer(monkeypatch)
+    f = tmp_path / "ok.py"; f.write_text(CLEAN)
+    assert run_hook(payload(f), monkeypatch) == (0, "")
+
+
+def test_it_stays_silent_however_many_times_you_write(tmp_path, monkeypatch):
+    """The old design fired once per session and kept a marker file to enforce
+    it. The notice should not have been firing at all, so both are gone."""
+    no_analyzer(monkeypatch)
+    f = tmp_path / "ok.py"; f.write_text(CLEAN)
+    for _ in range(5):
+        assert run_hook(payload(f), monkeypatch) == (0, "")
 
 
 def test_exit_zero_is_the_silent_path(tmp_path, monkeypatch):
     """Exit 0 sends stdout to the debug log and shows it to nobody, so the
     hook must return 0 and print nothing rather than printing a tick."""
     f = tmp_path / "ok.py"; f.write_text(CLEAN)
-    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p, s: None)
+    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p: None)
     out = io.StringIO()
     monkeypatch.setattr(sys, "stdin", io.StringIO(payload(f)))
     with redirect_stdout(out):
@@ -65,47 +92,119 @@ def test_exit_zero_is_the_silent_path(tmp_path, monkeypatch):
 def test_non_source_files_are_not_checked(tmp_path, monkeypatch, name):
     """A hook that fires on lock files and prose fires constantly."""
     f = tmp_path / name; f.write_text("trailing   \n" * 50)
-    code, err = run_hook(payload(f), monkeypatch)
-    assert (code, err) == (0, "")
+    assert run_hook(payload(f), monkeypatch) == (0, "")
 
 
 def test_an_unreadable_path_is_not_a_finding(tmp_path, monkeypatch):
     """The file being gone says nothing about the code, and a hook that
     complains about it teaches the reader to ignore hooks."""
-    code, err = run_hook(payload(tmp_path / "absent.py"), monkeypatch)
-    assert (code, err) == (0, "")
+    assert run_hook(payload(tmp_path / "absent.py"), monkeypatch) == (0, "")
 
 
 def test_malformed_hook_input_does_nothing(monkeypatch):
-    code, err = run_hook("not json at all", monkeypatch)
-    assert (code, err) == (0, "")
+    assert run_hook("not json at all", monkeypatch) == (0, "")
 
 
 def test_missing_file_path_does_nothing(monkeypatch):
-    code, err = run_hook(json.dumps({"tool_input": {}}), monkeypatch)
-    assert (code, err) == (0, "")
+    assert run_hook(json.dumps({"tool_input": {}}), monkeypatch) == (0, "")
+
+
+# --- an absence is only worth saying alongside a presence -------------------
+
+def test_a_real_finding_carries_the_absence_with_it(tmp_path, monkeypatch):
+    """Silent alone, reported alongside. The reader is about to act on a list,
+    so the list has to say what it did not look at."""
+    no_analyzer(monkeypatch)
+    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    code, err = run_hook(payload(f), monkeypatch)
+    assert code == 2
+    assert "L1.17" in err and "NOT_RUN" in err and "L1.18" in err
+
+
+def test_every_report_states_its_coverage_before_its_content(tmp_path, monkeypatch):
+    """A findings list with no coverage stated is a list claiming to be
+    complete."""
+    no_analyzer(monkeypatch)
+    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    first = run_hook(payload(f), monkeypatch)[1].splitlines()[0]
+    assert first == "honest-code: 2 of 3 checks ran on big.py"
+
+
+def test_coverage_counts_checks_that_ran_not_findings_that_fired():
+    """A check that ran and passed leaves no finding, so counting the findings
+    counted it as not having run. That reported "1 of 3" when two had."""
+    out = edit_check.render("a/big.py", [
+        {"indicator": "L1.17", "verdict": "OUT_OF_SPEC", "detail": "d",
+         "action": "a"},
+        dict(NO_ANALYZER)])
+    assert out.splitlines()[0].startswith("honest-code: 2 of 3")
+
+
+def test_full_coverage_says_three_of_three():
+    out = edit_check.render("a/big.py", [
+        {"indicator": "L1.17", "verdict": "OUT_OF_SPEC", "detail": "d",
+         "action": "a"}])
+    assert out.splitlines()[0].startswith("honest-code: 3 of 3")
+
+
+def test_findings_for_keeps_the_checks_that_did_not_run(tmp_path, monkeypatch):
+    """Suppressing them here would make the coverage count impossible, and the
+    count is the whole of the honesty."""
+    no_analyzer(monkeypatch)
+    f = tmp_path / "ok.py"; f.write_text(CLEAN)
+    got = edit_check.findings_for(str(f), CLEAN)
+    assert [g["verdict"] for g in got] == ["NOT_RUN"]
+
+
+def test_no_report_ever_claims_the_file_passed():
+    """Silence means nothing surfaced. A tick would mean checked and passed,
+    and a hook running 3 of 20 indicators is not in a position to say that.
+
+    Scanned in the output rather than the source, because "clean" appears in
+    the source as a band name the analyzer returns, which the first version of
+    this test could not tell from a claim the hook was making."""
+    shapes = [
+        [dict(NO_ANALYZER)],
+        [{"indicator": "L1.17", "verdict": "OUT_OF_SPEC", "detail": "d",
+          "action": "a"}],
+        [{"indicator": "L1.16", "verdict": "OUT_OF_SPEC", "detail": "d",
+          "action": "a"}, dict(NO_ANALYZER)],
+    ]
+    for findings in shapes:
+        out = edit_check.render("a/b.py", findings).lower()
+        for claim in ("clean", "passed", "✓", "all good", "no issues"):
+            assert claim not in out, (claim, out)
+
+
+def test_every_report_opens_on_coverage_not_on_a_verdict():
+    """The reader learns what was examined before what was found, so the list
+    can never be taken for a complete one."""
+    for findings in ([dict(NO_ANALYZER)],
+                     [{"indicator": "L1.17", "verdict": "OUT_OF_SPEC",
+                       "detail": "d", "action": "a"}]):
+        assert edit_check.render("b.py", findings).startswith("honest-code: ")
+        assert "checks ran on" in edit_check.render("b.py", findings)
 
 
 # --- what does surface ------------------------------------------------------
 
 def test_an_over_long_file_surfaces_on_stderr_with_exit_2(tmp_path, monkeypatch):
     f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
-    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p, s: None)
+    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p: None)
     code, err = run_hook(payload(f), monkeypatch)
-    assert code == 2
-    assert "L1.17" in err and "1001 lines" in err
+    assert code == 2 and "L1.17" in err and "1001 lines" in err
 
 
 def test_a_file_at_the_limit_is_silent(tmp_path, monkeypatch):
     f = tmp_path / "edge.py"; f.write_text("x = 1\n" * 1000)
-    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p, s: None)
+    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p: None)
     assert run_hook(payload(f), monkeypatch) == (0, "")
 
 
 def test_trailing_whitespace_over_the_band_surfaces(tmp_path, monkeypatch):
     lines = ["x = 1   "] * 10 + ["y = 2"] * 90
     f = tmp_path / "ws.py"; f.write_text("\n".join(lines) + "\n")
-    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p, s: None)
+    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p: None)
     code, err = run_hook(payload(f), monkeypatch)
     assert code == 2 and "L1.16" in err and "10.0%" in err
 
@@ -113,36 +212,25 @@ def test_trailing_whitespace_over_the_band_surfaces(tmp_path, monkeypatch):
 def test_trailing_whitespace_inside_the_band_is_silent(tmp_path, monkeypatch):
     lines = ["x = 1   "] * 2 + ["y = 2"] * 98
     f = tmp_path / "ws.py"; f.write_text("\n".join(lines) + "\n")
-    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p, s: None)
+    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p: None)
     assert run_hook(payload(f), monkeypatch) == (0, "")
 
 
 def test_every_finding_carries_an_action(tmp_path, monkeypatch):
     """A verdict the reader cannot act on is a complaint."""
+    no_analyzer(monkeypatch)
     f = tmp_path / "big.py"; f.write_text("x = 1   \n" * 1001)
-    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p, s: None)
-    for finding in edit_check.findings_for(str(f), f.read_text(), "s"):
+    for finding in edit_check.findings_for(str(f), f.read_text()):
         assert finding["action"]
 
 
 # --- the delegated indicator ------------------------------------------------
 
-def test_a_missing_analyzer_is_unmeasured_not_a_pass(tmp_path, monkeypatch):
+def test_a_missing_analyzer_is_not_run_rather_than_passed(tmp_path, monkeypatch):
     """"Not checked" must never read as "passed"."""
-    monkeypatch.setattr(edit_check.shutil, "which", lambda n: None)
-    monkeypatch.setattr(edit_check, "already_told", lambda s: False)
-    f = edit_check.analyzer_finding(str(tmp_path / "x.py"), "fresh")
-    assert f["verdict"] == "UNMEASURED" and "not on PATH" in f["detail"]
-
-
-def test_the_missing_analyzer_is_reported_once_per_session(tmp_path, monkeypatch):
-    """Repeating a fact the reader cannot act on differently is how an alarm
-    becomes wallpaper."""
-    monkeypatch.setattr(edit_check.shutil, "which", lambda n: None)
-    session = "once-" + tempfile.mktemp(prefix="", dir="").replace("/", "")
-    first = edit_check.analyzer_finding(str(tmp_path / "x.py"), session)
-    second = edit_check.analyzer_finding(str(tmp_path / "y.py"), session)
-    assert first is not None and second is None
+    no_analyzer(monkeypatch)
+    f = edit_check.analyzer_finding(str(tmp_path / "x.py"))
+    assert f["verdict"] == "NOT_RUN" and "not on PATH" in f["detail"]
 
 
 def test_the_hook_never_reimplements_the_mutable_state_ratio():
@@ -154,42 +242,44 @@ def test_the_hook_never_reimplements_the_mutable_state_ratio():
     assert edit_check.ANALYZER in src
 
 
+def fake_run(stdout):
+    return lambda *a, **k: type("R", (), {"stdout": stdout})()
+
+
 def test_a_healthy_band_from_the_analyzer_is_silent(monkeypatch):
     monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
-    monkeypatch.setattr(edit_check.subprocess, "run", lambda *a, **k: type(
-        "R", (), {"stdout": json.dumps({"results": {"L1.18": {"band": "Healthy", "value": 3.0}}})})())
-    assert edit_check.analyzer_finding("x.py", "s") is None
+    monkeypatch.setattr(edit_check.subprocess, "run", fake_run(json.dumps(
+        {"results": {"L1.18": {"band": "Healthy", "value": 3.0}}})))
+    assert edit_check.analyzer_finding("x.py") is None
 
 
 def test_a_slop_band_from_the_analyzer_surfaces_with_its_caveat(monkeypatch):
     monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
-    monkeypatch.setattr(edit_check.subprocess, "run", lambda *a, **k: type(
-        "R", (), {"stdout": json.dumps({"results": {"L1.18": {"band": "Slop", "value": 66.7}}})})())
-    f = edit_check.analyzer_finding("x.py", "s")
+    monkeypatch.setattr(edit_check.subprocess, "run", fake_run(json.dumps(
+        {"results": {"L1.18": {"band": "Slop", "value": 66.7}}})))
+    f = edit_check.analyzer_finding("x.py")
     assert f["verdict"] == "OUT_OF_SPEC" and "66.7" in f["detail"]
     assert "provisional" in f["caveat"]
 
 
-def test_an_unparseable_analyzer_response_is_unmeasured(monkeypatch):
+def test_an_unparseable_analyzer_response_did_not_run(monkeypatch):
     monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
-    monkeypatch.setattr(edit_check.subprocess, "run", lambda *a, **k: type(
-        "R", (), {"stdout": "not json"})())
-    assert edit_check.analyzer_finding("x.py", "s")["verdict"] == "UNMEASURED"
+    monkeypatch.setattr(edit_check.subprocess, "run", fake_run("not json"))
+    assert edit_check.analyzer_finding("x.py")["verdict"] == "NOT_RUN"
 
 
-def test_an_analyzer_with_no_verdict_is_unmeasured(monkeypatch):
+def test_an_analyzer_with_no_verdict_did_not_run(monkeypatch):
     monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
-    monkeypatch.setattr(edit_check.subprocess, "run", lambda *a, **k: type(
-        "R", (), {"stdout": json.dumps({"results": {}})})())
-    assert edit_check.analyzer_finding("x.py", "s")["verdict"] == "UNMEASURED"
+    monkeypatch.setattr(edit_check.subprocess, "run", fake_run(json.dumps({"results": {}})))
+    assert edit_check.analyzer_finding("x.py")["verdict"] == "NOT_RUN"
 
 
-def test_an_analyzer_that_will_not_run_is_unmeasured(monkeypatch):
+def test_an_analyzer_that_will_not_run_did_not_run(monkeypatch):
     def boom(*a, **k):
         raise OSError("no")
     monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
     monkeypatch.setattr(edit_check.subprocess, "run", boom)
-    assert edit_check.analyzer_finding("x.py", "s")["verdict"] == "UNMEASURED"
+    assert edit_check.analyzer_finding("x.py")["verdict"] == "NOT_RUN"
 
 
 # --- run it the way Claude Code does ----------------------------------------
@@ -198,18 +288,14 @@ def test_the_hook_runs_as_a_subprocess_and_is_silent_on_a_clean_file(tmp_path):
     f = tmp_path / "ok.py"; f.write_text(CLEAN)
     p = subprocess.run([sys.executable, str(ROOT / "hooks" / "edit_check.py")],
                        input=payload(f), capture_output=True, text=True)
-    assert p.returncode in (0, 2)      # 2 only if the analyzer is absent this session
-    if p.returncode == 0:
-        assert p.stdout == "" and p.stderr == ""
+    assert (p.returncode, p.stdout, p.stderr) == (0, "", "")
 
 
 def test_the_hook_runs_as_a_subprocess_and_exits_2_on_a_finding(tmp_path):
     f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
     p = subprocess.run([sys.executable, str(ROOT / "hooks" / "edit_check.py")],
                        input=payload(f), capture_output=True, text=True)
-    assert p.returncode == 2
-    assert "L1.17" in p.stderr
-    assert p.stdout == ""
+    assert p.returncode == 2 and "L1.17" in p.stderr and p.stdout == ""
 
 
 def test_the_hook_is_fast_enough_to_sit_in_an_edit_loop(tmp_path):
@@ -229,22 +315,8 @@ def test_an_empty_file_has_no_whitespace_finding(tmp_path):
     assert edit_check.whitespace_finding("") is None
 
 
-def test_no_session_id_suppresses_the_once_per_session_notice():
-    """Without a session there is nowhere to record that we already said it,
-    so saying nothing beats saying it on every write."""
-    assert edit_check.already_told("") is True
-
-
-def test_an_unwritable_marker_directory_suppresses_the_notice(monkeypatch):
-    def boom(*a, **k):
-        raise OSError("read-only")
-    monkeypatch.setattr(edit_check.Path, "exists", lambda self: False)
-    monkeypatch.setattr(edit_check.Path, "touch", boom)
-    assert edit_check.already_told("s2") is True
-
-
 def test_the_caveat_is_rendered_when_present():
-    """The provisional-threshold note is the honest part of an L1.18 finding
+    """The provisional-threshold note is the honest half of an L1.18 finding
     and it must reach the reader, not just the dict."""
     out = edit_check.render("a/b.py", [{
         "indicator": "L1.18", "verdict": "OUT_OF_SPEC",

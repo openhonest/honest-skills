@@ -185,17 +185,37 @@ lines, and trailing-whitespace density against the Slop Audit's published band.
 Both are exact and neither has a rival implementation to disagree with.
 
 For the mutable-state ratio it shells out to `slop-audit-l1` if that is
-installed, and reports `UNMEASURED` if it is not. **It does not implement the
-ratio itself.** The authoritative definition lives in the Honest Framework with
-its bound-literal amendment, and a second implementation under the same name is
-how two tools come to disagree while both claim the standard. There is a test
-that fails if anyone adds `import ast` to the hook.
+installed. **It does not implement the ratio itself.** The authoritative
+definition lives in the Honest Framework with its bound-literal amendment, and a
+second implementation under the same name is how two tools come to disagree
+while both claim the standard. There is a test that fails if anyone adds
+`import ast` to the hook.
 
-`UNMEASURED` is reported once per session rather than once per write, because
-repeating a fact you cannot act on differently is how an alarm becomes
-wallpaper. It is reported at all because not checked is not the same as passed,
-and a tool that stays quiet about what it did not do is the failure this project
-exists to name.
+### An absence is not a finding about your file
+
+The first version announced the missing analyzer as a finding, so a clean file
+produced `1 finding(s) in t.py` when there was nothing in t.py at all. The hook
+was reporting on itself and labelling the report as an observation of your code.
+Every new install met that on its first write, because nobody has the analyzer.
+
+The rule that replaced it: an absence is worth saying only alongside a presence.
+So a report leads with its coverage,
+
+```
+honest-code: 2 of 3 checks ran on big.py
+  OUT_OF_SPEC  L1.17  1001 lines, over the 1000-line threshold
+      split it, or accept it deliberately
+  NOT_RUN      L1.18  slop-audit-l1 is not on PATH
+      this file was not checked for mutable-state ratio
+```
+
+and when nothing surfaced there is no list to be incomplete about, so the hook
+says nothing at all.
+
+Silence is not a pass and never claims to be. Nothing here prints a tick, a
+score, or the word clean, and a test scans the rendered output to keep it that
+way. What keeps the silence honest is the coverage line: you cannot read a
+finding from this tool without also reading what it did not examine.
 
 This is not the Slop Audit. It is the part of it that means anything for one
 file at one moment, which is four indicators out of twenty. Run the full audit
