@@ -5,18 +5,18 @@
     "url": "https://openhonest.org"
   },
   "metadata": {
-    "description": "Skills that make an AI agent report what it cannot do. root-cause forbids a causal claim without evidence and recurses to a structural cause. sitrep forces the finding into the first sentence, bad news above good news, stated confidence, and a named gap for anything unverified. Ships clarity.py, which scores a draft against the standard so the rule is a check rather than advice.",
-    "version": "0.1.0",
+    "description": "Skills that make an AI agent report what it cannot do. root-cause forbids a causal claim without evidence and recurses to a structural cause. sitrep forces the finding into the first sentence, bad news above good news, stated confidence, and a named gap for anything unverified. honest-code applies the same discipline to the code itself: no hidden state, no swallowed error, no implicit default, and it delegates every mechanically decidable rule to a linter rather than claiming a verdict it did not reach. Ships clarity.py and pre-commit hooks, so the rules are checks rather than advice.",
+    "version": "0.3.0",
     "repository": "https://github.com/openhonest/honest-skills"
   },
   "plugins": [
     {
       "name": "honest-skills",
-      "description": "Evidence discipline for AI agents: no unproven causal claims, no buried bad news, no unstated confidence.",
-      "version": "0.1.0",
+      "description": "Evidence discipline for AI agents and for the code they write: no unproven causal claims, no buried bad news, no unstated confidence, no silent failure.",
+      "version": "0.3.0",
       "source": "./",
       "author": {
-        "name": "Adam Z. Wasserman",
+        "name": "Adam Zachary Wasserman",
         "url": "https://adamzacharywasserman.com"
       },
       "license": "Apache-2.0",
@@ -27,11 +27,16 @@
         "technical-writing",
         "evidence",
         "calibration",
-        "agent-discipline"
+        "agent-discipline",
+        "code-quality",
+        "static-analysis",
+        "software-architecture",
+        "pre-commit"
       ],
       "skills": [
         "./skills/root-cause",
-        "./skills/sitrep"
+        "./skills/sitrep",
+        "./skills/honest-code"
       ]
     }
   ]
