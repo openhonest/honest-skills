@@ -135,6 +135,40 @@ failed a gate, `2` one or more could not be read. Worst wins, because a run that
 could not read half its input has not passed, and a hook that collapsed those
 would hide a broken setup behind a writing complaint.
 
+## The decision hook
+
+A question that asks you to choose gets sent back to the model to be put as a
+decision: background, current situation, options, recommendation, and the cost
+of doing nothing. It fires on `Stop`, where prose questions live, and on
+`PreToolUse` for `AskUserQuestion`, which is a decision by construction because
+its schema holds options.
+
+There is no hook that fires when a model asks a question in prose. `Stop` is the
+only place to stand and it fires every turn, so nearly all of this hook is about
+not firing.
+
+**The costs are not symmetric.** Missing a decision question costs nothing: the
+conversation carries on exactly as it would have. Blocking an ordinary question
+costs a wasted turn and teaches you to switch the hook off, and a hook that is
+switched off catches nothing. So it fires only when the words offer the reader
+alternatives, and at most once for any one message.
+
+Measured against a real 573-message session: it fired on 22, which is 3.8
+percent, and all 22 were genuine requests to choose. "Which file did you mean?"
+is not matched, because it asks you to identify something rather than to pick a
+course of action.
+
+The loop is the failure that would matter. Blocking on `Stop` produces a new
+turn, which ends, which fires `Stop` again. The guard keys on the content of the
+message rather than the turn, so reformatting gets you through and repeating
+yourself does not. When the guard cannot be written to disk the hook stays
+quiet, because a hook that cannot remember is a hook that repeats.
+
+**What it refuses to decide** is whether a question deserves a brief. That is
+intent, and intent is not readable from text. A genuine decision put in plain
+words with no alternatives named passes straight through. That is a miss, and it
+is the direction the errors are meant to fall in.
+
 ## Over MCP, for editors that are not Claude Code
 
 `.mcp.json` declares a server exposing the same three checkers as MCP tools:
