@@ -180,19 +180,38 @@ def test_an_unwritable_marker_suppresses_rather_than_risks_a_loop(monkeypatch):
 
 # --- AskUserQuestion, a decision by construction -----------------------------
 
-def test_ask_user_question_fires_when_the_lead_up_is_not_a_brief(tmp_path):
-    code, message = dc.on_pre_tool_use({
-        "hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion",
-        "transcript_path": transcript(tmp_path, "Here are some options."),
-        "session_id": str(uuid.uuid4())})
-    assert code == 2 and "Options" in message
-
-
-def test_ask_user_question_is_silent_when_the_lead_up_is_a_brief(tmp_path):
+def test_ask_user_question_never_blocks(tmp_path):
+    """It used to block when the preceding message was not a brief. It could
+    not do that: a model writes the brief and calls the tool in ONE turn, so
+    the brief is not a completed message yet and the hook read the turn before
+    it. Doing the right thing produced the same rejection as doing the wrong
+    thing, twice, with no path through, and a live session abandoned the widget
+    and asked in plain text instead."""
     assert dc.on_pre_tool_use({
         "hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion",
-        "transcript_path": transcript(tmp_path, BRIEF),
+        "transcript_path": transcript(tmp_path, "Here are some options."),
         "session_id": str(uuid.uuid4())}) == (0, "")
+
+
+def test_ask_user_question_is_recorded_even_though_it_passes(tmp_path, monkeypatch):
+    """Silence would make "ran and let it through" look like "never ran"."""
+    log = tmp_path / "trace.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    dc.on_pre_tool_use({
+        "hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion",
+        "transcript_path": transcript(tmp_path, "Options."),
+        "session_id": "s"})
+    row = json.loads(log.read_text())
+    assert row["event"] == "PreToolUse" and "cannot see the current turn" in row["why"]
+
+
+def test_a_brief_written_in_the_same_turn_is_caught_at_stop(tmp_path):
+    """Nothing is lost by not blocking. When the turn ends the brief IS in the
+    transcript, and Stop reads it there."""
+    brief = ("Background. A.\n\nCurrent situation. B.\n\nOptions.\n\n"
+             "- a, an hour\n- b, a day\n\nRecommendation: a.\n\n"
+             "Cost of no action. 3 days lost.")
+    assert stop(tmp_path, brief) == (0, "")
 
 
 def test_no_other_tool_is_touched(tmp_path):
@@ -202,18 +221,6 @@ def test_no_other_tool_is_touched(tmp_path):
             "transcript_path": transcript(tmp_path, "Should I ship it?"),
             "session_id": "s"}) == (0, "")
 
-
-def test_ask_user_question_with_no_transcript_text_still_fires_once(tmp_path):
-    """The tool call itself is the decision, so an empty lead-up is the worst
-    case rather than a reason to stay quiet."""
-    p = tmp_path / "t.jsonl"; p.write_text("")
-    code, _ = dc.on_pre_tool_use({
-        "hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion",
-        "transcript_path": str(p), "session_id": str(uuid.uuid4())})
-    assert code == 2
-
-
-# --- run it the way Claude Code does ----------------------------------------
 
 def run(raw, monkeypatch):
     err = io.StringIO()
@@ -300,17 +307,95 @@ def test_a_malformed_line_after_the_last_message_is_skipped(tmp_path):
     assert code == 2
 
 
-def test_ask_user_question_also_fires_only_once(tmp_path):
-    """Blocking the same tool call twice would stall the turn as surely as a
-    Stop loop would."""
-    session = str(uuid.uuid4())
-    payload = {"hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion",
-               "transcript_path": transcript(tmp_path, "Here are options."),
-               "session_id": session}
-    assert dc.on_pre_tool_use(payload)[0] == 2
-    assert dc.on_pre_tool_use(payload) == (0, "")
+def test_no_other_tool_is_touched(tmp_path):
+    for tool in ("Bash", "Write", "Edit", "Read"):
+        assert dc.on_pre_tool_use({
+            "hook_event_name": "PreToolUse", "tool_name": tool,
+            "transcript_path": transcript(tmp_path, "Should I ship it?"),
+            "session_id": "s"}) == (0, "")
+def run(raw, monkeypatch):
+    err = io.StringIO()
+    monkeypatch.setattr(sys, "stdin", io.StringIO(raw))
+    monkeypatch.setattr(sys, "stderr", err)
+    return dc.main(), err.getvalue()
 
 
+def test_malformed_input_does_nothing(monkeypatch):
+    assert run("not json", monkeypatch) == (0, "")
+
+
+def test_a_json_value_that_is_not_an_object_does_nothing(monkeypatch):
+    assert run("[1,2,3]", monkeypatch) == (0, "")
+
+
+def test_an_event_this_hook_does_not_handle_does_nothing(monkeypatch):
+    assert run(json.dumps({"hook_event_name": "SessionStart"}), monkeypatch) == (0, "")
+
+
+def test_a_missing_event_name_does_nothing(monkeypatch):
+    assert run(json.dumps({"transcript_path": "/nope"}), monkeypatch) == (0, "")
+
+
+def test_main_writes_the_advice_to_stderr_and_exits_2(tmp_path, monkeypatch):
+    payload = json.dumps({
+        "hook_event_name": "Stop",
+        "transcript_path": transcript(tmp_path, "Should I ship it?"),
+        "session_id": str(uuid.uuid4())})
+    code, err = run(payload, monkeypatch)
+    assert code == 2 and "hold in their head" in err
+
+
+def test_it_runs_as_a_subprocess_and_is_silent_on_an_ordinary_turn(tmp_path):
+    payload = json.dumps({
+        "hook_event_name": "Stop",
+        "transcript_path": transcript(tmp_path, "The tests pass."),
+        "session_id": str(uuid.uuid4())})
+    p = subprocess.run([sys.executable, str(ROOT / "hooks" / "decision_check.py")],
+                       input=payload, capture_output=True, text=True)
+    assert (p.returncode, p.stdout, p.stderr) == (0, "", "")
+
+
+def test_it_is_fast_enough_to_run_on_every_turn(tmp_path):
+    """It fires on Stop, so it runs once per turn for the life of the session."""
+    import time
+    payload = json.dumps({
+        "hook_event_name": "Stop",
+        "transcript_path": transcript(tmp_path, "The tests pass."),
+        "session_id": str(uuid.uuid4())})
+    start = time.monotonic()
+    subprocess.run([sys.executable, str(ROOT / "hooks" / "decision_check.py")],
+                   input=payload, capture_output=True, text=True)
+    assert time.monotonic() - start < 2.0
+
+
+def test_only_the_tail_of_a_large_transcript_is_read(tmp_path):
+    """A session transcript reaches tens of megabytes. A hook that reads all of
+    it on every turn is a hook that gets uninstalled for being slow."""
+    p = tmp_path / "big.jsonl"
+    filler = json.dumps({"type": "user", "message": {"content": []}}) + "\n"
+    with open(p, "w") as fh:
+        fh.write(filler * 40_000)
+        fh.write(json.dumps({"type": "assistant", "message": {"content": [
+            {"type": "text", "text": "Should I ship it?"}]}}) + "\n")
+    assert p.stat().st_size > dc.TAIL_BYTES
+    code, _ = dc.on_stop({"transcript_path": str(p),
+                          "session_id": str(uuid.uuid4())})
+    assert code == 2
+    assert len(dc.read_tail(str(p))) <= dc.TAIL_BYTES
+
+
+def test_a_malformed_line_after_the_last_message_is_skipped(tmp_path):
+    """The scan runs backwards from the end of the file, so the line that has
+    to be tolerated is the one written after the message, not before it. The
+    first version of this test put the bad line first, where the scan never
+    reached it."""
+    p = tmp_path / "t.jsonl"
+    p.write_text(json.dumps({"type": "assistant", "message": {"content": [
+        {"type": "text", "text": "Should I ship it?"}]}}) + "\n"
+        + "{half a record\n")
+    code, _ = dc.on_stop({"transcript_path": str(p),
+                          "session_id": str(uuid.uuid4())})
+    assert code == 2
 def test_main_prints_nothing_when_the_handler_declines(tmp_path, monkeypatch):
     """The silent path through main(), which is the one it takes on almost
     every turn."""

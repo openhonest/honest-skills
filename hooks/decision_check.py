@@ -447,20 +447,33 @@ def on_stop(payload: dict) -> tuple[int, str]:
 
 
 def on_pre_tool_use(payload: dict) -> tuple[int, str]:
-    """AskUserQuestion is a decision by construction: its schema holds options.
+    """Never blocks. Records that the call happened, and gets out of the way.
 
-    The brief cannot live in the tool call, because the schema has nowhere to
-    put a background or a cost. It belongs in the message before it, so that is
-    what gets checked.
+    WHY THIS WAS GUTTED RATHER THAN FIXED
+
+    It used to block AskUserQuestion when the preceding message was not a
+    brief. It could not do that, and the way it failed was the worst available
+    to a hook.
+
+    A model that writes the brief and then calls the tool writes both in ONE
+    turn. The brief is not a completed assistant message yet, so it is not in
+    the transcript, so the hook read the turn before it and saw no brief.
+    Doing the right thing produced the same rejection as doing the wrong
+    thing, twice, with no path through. A live session gave up on the widget
+    and asked in plain text instead, which is a hook making a tool unusable.
+
+    The rule it broke: judge only what you can see. The hook cannot see the
+    current turn, so it cannot know whether a brief was written, and blocking
+    on a fact it has no access to is worse than not checking at all. The
+    schema already requires two or more options, which is the only thing in
+    the tool call itself worth checking, so nothing is lost by stopping.
+
+    Stop still covers the case. When the turn ends, the brief IS in the
+    transcript, and the Stop hook reads it there.
     """
-    if payload.get("tool_name") != "AskUserQuestion":
-        return 0, ""
-    text = last_assistant_text(read_tail(payload.get("transcript_path") or ""))
-    if already_in_form(text):
-        return 0, ""
-    if fired_before(payload.get("session_id") or "", text or "<no text>"):
-        return 0, ""
-    return 2, advice_for(text, SHAPES[0][1])
+    if payload.get("tool_name") == "AskUserQuestion":
+        trace("PreToolUse", "declined", "cannot see the current turn, never blocks")
+    return 0, ""
 
 
 EVENTS = {"Stop": on_stop, "PreToolUse": on_pre_tool_use}

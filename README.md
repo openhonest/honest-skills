@@ -139,9 +139,19 @@ would hide a broken setup behind a writing complaint.
 
 A question that asks you to choose gets sent back to the model to be put as a
 decision: background, current situation, options, recommendation, and the cost
-of doing nothing. It fires on `Stop`, where prose questions live, and on
-`PreToolUse` for `AskUserQuestion`, which is a decision by construction because
-its schema holds options.
+of doing nothing. It fires on `Stop`, and only on `Stop`.
+
+It used to block `AskUserQuestion` too, and that was a mistake worth recording.
+A model writes the brief and calls the tool in one turn, so the brief is not a
+completed message yet and is not in the transcript. The hook read the turn
+before it, saw no brief, and rejected the call. Doing the right thing produced
+the same rejection as doing the wrong thing, with no path through, and a live
+session abandoned the widget and asked in plain text instead.
+
+The rule it broke: judge only what you can see. It could not see the current
+turn, so it could not know whether a brief had been written, and blocking on a
+fact it had no access to is worse than not checking. Nothing is lost, because
+when the turn ends the brief is in the transcript and `Stop` reads it there.
 
 There is no hook that fires when a model asks a question in prose. `Stop` is the
 only place to stand and it fires every turn, so nearly all of this hook is about
