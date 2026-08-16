@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sys
 import tempfile
@@ -144,6 +145,29 @@ CONTRADICTS_A_RULING = (
 # bar rather than five, because chat is not a document and demanding the full
 # shape of a brief inside a reply is the friction this is supposed to avoid.
 ENOUGH_SECTIONS = 3
+
+
+def trace(event: str, verdict: str, why: str) -> None:
+    """Record that the hook ran, when someone asks for the record.
+
+    A hook that stays silent leaves no way to tell "ran and correctly declined"
+    from "never ran at all". That is the same defect as a check reporting a
+    pass it did not perform, one level up, and it went unclosed for a day
+    because the only evidence written was a marker for the firings.
+
+    Off unless HONEST_HOOK_TRACE names a file, because a write on every turn
+    is churn nobody asked for. A failure to write is swallowed on purpose:
+    tracing must never be able to break the thing it observes.
+    """
+    path = os.environ.get("HONEST_HOOK_TRACE")
+    if not path:
+        return
+    try:
+        with open(path, "a") as fh:
+            fh.write(json.dumps({"event": event, "verdict": verdict,
+                                 "why": why}) + "\n")
+    except OSError:
+        pass
 
 
 def read_tail(path: str) -> str:
@@ -355,13 +379,20 @@ def advice_for(text: str, lead: str) -> str:
 
 def on_stop(payload: dict) -> tuple[int, str]:
     text = last_assistant_text(read_tail(payload.get("transcript_path") or ""))
-    if not text or already_in_form(text):
+    if not text:
+        trace("Stop", "declined", "no assistant text to read")
+        return 0, ""
+    if already_in_form(text):
+        trace("Stop", "declined", "already in the form")
         return 0, ""
     lead = shape_of(text)
     if not lead:
+        trace("Stop", "declined", "no shape matched")
         return 0, ""
     if fired_before(payload.get("session_id") or "", text):
+        trace("Stop", "declined", "already sent back once")
         return 0, ""
+    trace("Stop", "fired", lead)
     return 2, advice_for(text, lead)
 
 

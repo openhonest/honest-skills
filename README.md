@@ -158,6 +158,12 @@ percent, and all 22 were genuine requests to choose. "Which file did you mean?"
 is not matched, because it asks you to identify something rather than to pick a
 course of action.
 
+Set `HONEST_HOOK_TRACE` to a file path and the hook records every turn it
+runs, whether it fired or declined and why. Off by default, because a write on
+every turn is churn nobody asked for. It exists because silence alone cannot
+tell you the hook ran and correctly declined from the hook never running, which
+is the same defect as a reported pass that was never performed.
+
 The loop is the failure that would matter. Blocking on `Stop` produces a new
 turn, which ends, which fires `Stop` again. The guard keys on the content of the
 message rather than the turn, so reformatting gets you through and repeating

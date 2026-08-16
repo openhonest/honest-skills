@@ -532,3 +532,62 @@ def test_the_three_advices_are_mutually_exclusive(tmp_path):
     for flags in seen:
         assert sum(flags) == 1, flags
     assert len(set(seen)) == 3
+
+
+# --- evidence that it ran, not only that it fired ---------------------------
+
+def test_a_declining_turn_leaves_a_trace_when_asked(tmp_path, monkeypatch):
+    """Without this there is no way to tell "ran and correctly declined" from
+    "never ran at all", which is the same defect as a reported pass that was
+    never performed."""
+    log = tmp_path / "trace.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    stop(tmp_path, "The tests pass. 304 of them.")
+    rows = [json.loads(l) for l in log.read_text().splitlines()]
+    assert rows == [{"event": "Stop", "verdict": "declined",
+                     "why": "no shape matched"}]
+
+
+def test_a_firing_turn_records_why_it_fired(tmp_path, monkeypatch):
+    log = tmp_path / "trace.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    stop(tmp_path, "Should I ship it?")
+    row = json.loads(log.read_text().splitlines()[0])
+    assert row["verdict"] == "fired" and "asking for a decision" in row["why"]
+
+
+@pytest.mark.parametrize("text,why", [
+    ("Background. A.\n\nCurrent situation. B.\n\nOptions.\n\n- a\n- b\n\n"
+     "Recommendation: a.\n\nCost of no action. 3 days.", "already in the form"),
+    ("The tests pass.", "no shape matched"),
+])
+def test_each_decline_says_which_one_it_was(tmp_path, monkeypatch, text, why):
+    log = tmp_path / "trace.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    stop(tmp_path, text)
+    assert json.loads(log.read_text().splitlines()[0])["why"] == why
+
+
+def test_no_trace_is_written_unless_asked(tmp_path, monkeypatch):
+    """A write on every turn is churn nobody asked for.
+
+    Named explicitly rather than globbed: the first version globbed for any
+    .jsonl and found the transcript fixture it had just written itself."""
+    log = tmp_path / "trace.jsonl"
+    monkeypatch.delenv("HONEST_HOOK_TRACE", raising=False)
+    stop(tmp_path, "Should I ship it?")
+    assert not log.exists()
+
+
+def test_an_unwritable_trace_never_breaks_the_hook(tmp_path, monkeypatch):
+    """Tracing must not be able to break the thing it observes."""
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(tmp_path / "no" / "such" / "t"))
+    assert stop(tmp_path, "Should I ship it?")[0] == 2
+
+
+def test_an_empty_transcript_is_recorded_as_a_decline(tmp_path, monkeypatch):
+    log = tmp_path / "trace.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    p = tmp_path / "t.jsonl"; p.write_text("")
+    dc.on_stop({"transcript_path": str(p), "session_id": "s"})
+    assert json.loads(log.read_text())["why"] == "no assistant text to read"
