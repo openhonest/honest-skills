@@ -55,6 +55,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+import clarity   # noqa: E402
 import decision  # noqa: E402
 
 # Only the last stretch of the transcript is read. It is a JSONL file that
@@ -232,6 +233,26 @@ def last_assistant_text(transcript: str) -> str:
 LINE = re.I | re.M
 
 
+# A phrase inside quotation marks is being named, not used. Code spans are the
+# same, and clarity.strip_furniture already removes those.
+QUOTED = re.compile(r"[\"\u201c][^\"\u201c\u201d\n]{1,60}[\"\u201d]")
+
+
+def usable(text: str) -> str:
+    """The text with mentions removed, so a report about this hook does not
+    trip it.
+
+    It fired on a message whose only match was the phrase "your call" quoted as
+    an example of what it matches. commit_msg.py already made this argument and
+    acted on it: a checker that cannot tell a mention from a use makes its own
+    defects unreportable. This one was not doing it.
+
+    Stripping quotes can hide a genuine handoff someone wrote inside quotation
+    marks. That is a miss, which is the direction the errors are meant to fall.
+    """
+    return QUOTED.sub(" ", clarity.strip_furniture(text))
+
+
 def offers_a_choice(text: str) -> bool:
     if any(re.search(p, text, LINE) for p in HANDS_THE_DECISION_OVER):
         return True
@@ -250,11 +271,12 @@ def buried_position(text: str) -> float | None:
     """
     if len(text.split()) < LONG_ENOUGH_TO_BURY:
         return None
+    clean = usable(text)
     spots = [m.start() for p in HANDS_THE_DECISION_OVER + OFFERS_A_CHOICE
-             for m in re.finditer(p, text, LINE)]
+             for m in re.finditer(p, clean, LINE)]
     if not spots:
         return None
-    where = min(spots) / len(text)
+    where = min(spots) / len(clean)
     return where if where >= BURIED_AFTER else None
 
 
@@ -291,7 +313,8 @@ def shape_of(text: str) -> str:
     being stopped, which is the same defect as a findings list that does not
     state its coverage.
     """
-    return " ".join(lead for detect, lead in SHAPES if detect(text))
+    clean = usable(text)
+    return " ".join(lead for detect, lead in SHAPES if detect(clean))
 
 
 def already_in_form(text: str) -> bool:
@@ -327,7 +350,7 @@ def has_needs_you(text: str) -> bool:
     """Named rather than indexed. Reading HANDS_THE_DECISION_OVER[1] pointed
     at whatever sat second in the tuple, so reordering it silently repointed
     this check and the only symptom was the wrong advice."""
-    return bool(re.search(NEEDS_YOU, text, LINE))
+    return bool(re.search(NEEDS_YOU, usable(text), LINE))
 
 
 # Three advices, because three different things are wrong.

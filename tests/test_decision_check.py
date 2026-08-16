@@ -654,3 +654,40 @@ def test_the_needs_you_check_does_not_depend_on_tuple_order(monkeypatch):
                         tuple(reversed(dc.HANDS_THE_DECISION_OVER)))
     assert dc.has_needs_you("- Needs you: whether to commit now.") is True
     assert dc.has_needs_you("- Needs you: nothing") is False
+
+
+# --- a mention is not a use -------------------------------------------------
+
+@pytest.mark.parametrize("text", [
+    'My list only had "your call". Three specimens produced "your call, not mine".',
+    'The phrase `your call` is what it matches.',
+    'It fired on "Needs you: whether to commit now" as an example.',
+    'Adding a fourth string like "up to you" buys one specimen.',
+])
+def test_a_quoted_or_code_span_phrase_does_not_fire(tmp_path, text):
+    """It fired on a message whose only match was the phrase it matches, quoted
+    as an example. commit_msg.py already made this argument and acted on it: a
+    checker that cannot tell a mention from a use makes its own defects
+    unreportable."""
+    assert stop(tmp_path, text) == (0, "")
+
+
+@pytest.mark.parametrize("text", [
+    "That one is yours to call.",
+    "That is your call.",
+    "- Needs you: whether to commit now.",
+])
+def test_the_same_words_unquoted_still_fire(tmp_path, text):
+    """Stripping mentions must not strip uses."""
+    assert stop(tmp_path, text)[0] == 2
+
+
+def test_a_report_about_this_hook_does_not_trip_it(tmp_path):
+    """The live false positive, kept as a fixture. This message asks for
+    nothing and every match in it is a quoted example."""
+    text = ('The declaro session\'s ask was missed because it said "yours to '
+            'call" and my list only had "your call". Three specimens produced '
+            '"your call", "your call, not mine", and "that one is yours to '
+            'call", and the list missed each in turn. 324 tests, 100 percent '
+            'branch coverage. Needs a restart.')
+    assert stop(tmp_path, text) == (0, "")
