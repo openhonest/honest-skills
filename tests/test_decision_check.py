@@ -591,3 +591,66 @@ def test_an_empty_transcript_is_recorded_as_a_decline(tmp_path, monkeypatch):
     p = tmp_path / "t.jsonl"; p.write_text("")
     dc.on_stop({"transcript_path": str(p), "session_id": "s"})
     assert json.loads(log.read_text())["why"] == "no assistant text to read"
+
+
+# --- the handoff family, after enumeration missed three specimens in a row ---
+
+@pytest.mark.parametrize("text", [
+    "That one is yours to call.",
+    "That is your call.",
+    "That is a change to signup code, your call, not mine.",
+    "Up to you.",
+    "Your decision.",
+    "I leave that one to you.",
+    "Your shout.",
+])
+def test_the_handoff_family_is_caught_by_rule_not_by_list(tmp_path, text):
+    """Three live specimens produced three phrasings and the phrase list
+    missed each in turn. The family is a second-person pronoun near a decision
+    noun, which covers every form seen and the obvious neighbours."""
+    assert stop(tmp_path, text)[0] == 2
+
+
+@pytest.mark.parametrize("text", [
+    "Your tests pass and your build is green.",
+    "I called your function twice.",
+    "The decision was made last week and your name is on it.",
+])
+def test_a_second_person_pronoun_alone_is_not_a_handoff(tmp_path, text):
+    """"your" is one of the commonest words in a report. Without a decision
+    noun beside it this fires on every second message."""
+    assert stop(tmp_path, text) == (0, "")
+
+
+def test_the_rule_still_misses_and_the_miss_is_recorded(tmp_path, monkeypatch):
+    """"That one is yours" carries no decision noun and passes through.
+
+    This is asserted rather than fixed. The hook recognises a family of forms
+    and goes quiet outside it, which is the same shape as the L1.18 defect in
+    the authority plan of this date. The difference is that the decline is
+    written to the trace, so the blind spot is countable instead of invisible.
+    """
+    log = tmp_path / "trace.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    assert stop(tmp_path, "That one is yours.") == (0, "")
+    assert json.loads(log.read_text())["why"] == "no shape matched"
+
+
+def test_the_declaro_specimen_is_caught(tmp_path):
+    """From a live session: a sound report whose one decision arrives in the
+    last line as "that one is yours to call"."""
+    text = ("Thirty-four other test files sit outside the fast suite the same "
+            "way. They hold 551 tests and take 20 seconds. Adding them takes "
+            "the fast suite from 11 seconds to 31, and your own note sets the "
+            "ceiling at 30. That one is yours to call.")
+    assert stop(tmp_path, text)[0] == 2
+
+
+def test_the_needs_you_check_does_not_depend_on_tuple_order(monkeypatch):
+    """It read HANDS_THE_DECISION_OVER[1] once, so reordering the tuple
+    silently repointed it at another pattern and the only symptom was the
+    wrong advice on the commonest shape of all."""
+    monkeypatch.setattr(dc, "HANDS_THE_DECISION_OVER",
+                        tuple(reversed(dc.HANDS_THE_DECISION_OVER)))
+    assert dc.has_needs_you("- Needs you: whether to commit now.") is True
+    assert dc.has_needs_you("- Needs you: nothing") is False

@@ -77,8 +77,34 @@ TAIL_BYTES = 400_000
 # question mark to do it. A specimen ending "that is a change to signup code,
 # your call, not mine" was missed entirely because the whole shape was gated on
 # a question mark that a plain statement of handoff does not carry.
+# A sitrep's own handoff line, and the commonest shape of all. It arrives
+# hundreds of words in, names no options and prices nothing, and none of the
+# other patterns touch it: "Needs you: whether to commit this now" holds no
+# question, no outward verb and no dispute.
+#
+# The negative lookahead matters: "Needs you: nothing" is the line that says
+# there is no decision, and firing on it would punish the correct answer.
+NEEDS_YOU = r"^\s*[-*]?\s*\*{0,2}Needs you\*{0,2}\s*:\s*(?!nothing\b|none\b|n/a\b)\S"
+
 HANDS_THE_DECISION_OVER = (
-    r"\byour call\b",
+    # A rule rather than a list, after three specimens produced three
+    # phrasings and the list missed all three in turn: "your call", then
+    # "your call, not mine", then "that one is yours to call".
+    #
+    # The family is a second-person pronoun near a decision noun. It covers
+    # every form seen so far and the obvious neighbours, which enumerating
+    # never did.
+    #
+    # THIS IS STILL AN ENUMERATION AND WILL STILL MISS. "That one is yours"
+    # carries no decision noun and passes straight through. That is the same
+    # shape as the L1.18 defect recorded in the authority plan on this date:
+    # a hand-maintained list of recognised forms that goes silent on anything
+    # outside it. The difference is that this one leaves a trace, so what it
+    # declined is countable instead of invisible.
+    r"\b(?:your|yours)\b[^.!?\n]{0,24}\b(?:call|choice|decision|shout|to make)\b",
+    r"\bup to you\b",
+    r"\b(?:leave|leaving) (?:that|this|it|them) (?:one )?(?:to|with) you\b",
+    r"\bnot mine to (?:make|call|decide)\b",
     # A sitrep's own handoff line, and the most common shape of all. It
     # arrives hundreds of words in, names no options and prices nothing,
     # and none of the other patterns touch it: "Needs you: whether to
@@ -86,11 +112,9 @@ HANDS_THE_DECISION_OVER = (
     # The negative lookahead matters: "Needs you: nothing" is the line
     # that says there is no decision, and firing on it would punish the
     # correct answer.
-    r"^\s*[-*]?\s*\*{0,2}Needs you\*{0,2}\s*:\s*(?!nothing\b|none\b|n/a\b)\S",
-    r"\byour (?:decision|choice)\b",
+    NEEDS_YOU,
     r"\bup to you\b",
     r"\bnot mine to (?:make|call|decide)\b",
-    r"\bI(?:'ll| will) leave (?:that|this|it) to you\b",
 )
 
 # 1b. The reader is being offered alternatives, in words that do not also occur
@@ -300,7 +324,10 @@ def fired_before(session: str, text: str) -> bool:
 
 
 def has_needs_you(text: str) -> bool:
-    return bool(re.search(HANDS_THE_DECISION_OVER[1], text, LINE))
+    """Named rather than indexed. Reading HANDS_THE_DECISION_OVER[1] pointed
+    at whatever sat second in the tuple, so reordering it silently repointed
+    this check and the only symptom was the wrong advice."""
+    return bool(re.search(NEEDS_YOU, text, LINE))
 
 
 # Three advices, because three different things are wrong.
