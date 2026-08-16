@@ -135,6 +135,35 @@ failed a gate, `2` one or more could not be read. Worst wins, because a run that
 could not read half its input has not passed, and a hook that collapsed those
 would hide a broken setup behind a writing complaint.
 
+## The unwritten-function hook
+
+A function with an empty body is indistinguishable, from the caller's side,
+from one that ran and had nothing to do. It returns `None`, the caller carries
+on, and the first evidence that the work never happened arrives somewhere else
+entirely. This finds those and asks for one line:
+
+```python
+def charge(card, amount):
+    raise NotImplementedError("CODE NOT WRITTEN")
+```
+
+The same marker in every language, so one grep across a polyglot repository
+finds all of them: `throw new Error`, `panic`, `todo!`,
+`UnsupportedOperationException`, `NotImplementedException`.
+
+**Most of the work is not firing.** An empty body is correct more often than it
+is a stub, and a hook that flags `@abstractmethod` is a hook nobody keeps.
+Excluded by name: abstract methods, `Protocol` and `ABC` members, `@overload`
+signatures, exception classes whose whole definition is `pass`, and anything
+that already says `CODE NOT WRITTEN`. A `return 0` is a decision somebody made
+and this cannot tell it from a placeholder, so it does not try.
+
+**Python is parsed, the rest are matched, and the report says which.** `ast`
+gives an exact answer and a syntax error becomes an honest silence rather than
+a guess. Other languages get a narrow pattern over a header and an empty body,
+which is approximate, and every such report says so. A reader who cannot tell a
+parsed answer from a matched one cannot weigh it.
+
 ## The decision hook
 
 A question that asks you to choose gets sent back to the model to be put as a
