@@ -10,7 +10,7 @@ The other skills in this repository make a model report what it cannot do. This 
 
 That is the thread running through every rule below. A class holding hidden state cannot tell you what it will do next. A caught-and-swallowed exception reports success for work that failed. An implicit default absorbs the caller's omission, so the program cannot tell "chose 30 seconds" from "forgot to say." A defensive check re-tests something the signature already promised, which means the promise was never trusted. Each is a way for code to be quietly wrong, and each rule removes one.
 
-Seventeen principles follow. The numbering is the Honest Framework's, not this file's, so that a rule number means one thing across every Open Honest artifact.
+Nineteen principles follow. The numbering is the Honest Framework's, not this file's, so that a rule number means one thing across every Open Honest artifact.
 
 ## What decides each rule, and what cannot
 
@@ -41,7 +41,7 @@ It ships with the [Honest Framework](https://github.com/openhonest/honest-framew
 | 15 | Declarative equivalents over lifecycle hooks | `HC-P011` |
 | 16 | Strangler pattern for migration | **nothing.** It is a process, not a property of code |
 
-Two of the sixteen are only partly decidable and one is not decidable at all. Say so when you report, rather than implying the linter covered everything. A rule nobody checked is not a rule that passed.
+Two of the nineteen are only partly decidable and one is not decidable at all. Say so when you report, rather than implying the linter covered everything. A rule nobody checked is not a rule that passed.
 
 ## The rules
 
@@ -127,17 +127,24 @@ A default is catch-and-swallow applied to inputs. It manufactures an untested in
 
 Encode absence as an explicit member of a bounded type, a Maybe or a named `Nothing`, resolved in a visible boundary step and exercised by a test. The `=` is the swallow; the boundary resolve is the surfaced decision.
 
-### 15. Declarative equivalents over lifecycle hooks
+### 15. Simple gherkin steps signal honest architecture
+
+If a step definition needs thirty lines of mock configuration, the code under test has hidden dependencies. When the function is pure the step is two lines: call it, check the result. Step length is therefore a readout on the architecture, not on the test.
+
+### 16. Declarative equivalents over lifecycle hooks
 
 A `useEffect` that fetches on mount, a signal handler, an ORM callback: each puts behaviour somewhere the reader does not look. Declare it where it happens.
 
-### 16. Strangler pattern for migration
+### 17. Strangler pattern for migration
 
 Route new traffic to the new implementation, leave the old one serving what it already serves, and delete it when nothing reaches it. Do not rewrite in place.
 
 Nothing checks this one. It is a property of how you sequence work, not of the code, and no linter will ever see it.
 
-### 17. Atomic test-and-set over check-then-act
+### 18. Dispatch tables close open input
+An open input space cannot be tested in full, so close it. A table with its keys written out declares exactly which cases exist, and that is the partition a test must cover, whatever the caller passes. The line is bounded against unbounded, never static against dynamic: `getattr(obj, name)` is honest when `name` ranges over a declared set. Read the table by subscript and let an unknown key raise. `table.get(key, default)` files an input nobody wrote a rule for under an answer written for a different input, and the default re-opens the space while the code still reads closed. Record what missed: an unknown key is a gap in the table.
+
+### 19. Atomic test-and-set over check-then-act
 A guard that reads a shared value and then writes it is not a guard. Between the read and the write another caller reads the same answer, and both proceed believing they hold the thing exclusively. Any await in between makes the race certain rather than occasional. Use one operation whose return value distinguishes "I took it" from "someone else holds it": an atomic insert, a compare-and-swap, an insert-if-absent. The token written must be unique to the caller, because every later caller reads a shared sentinel back and matches it.
 
 ## How to apply it
