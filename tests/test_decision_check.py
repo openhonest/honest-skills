@@ -470,3 +470,65 @@ def test_the_two_advices_are_never_both_given(tmp_path):
     for text in (long_buried, "Should I ship it?"):
         _, message = stop(tmp_path, text)
         assert ("Missing here" in message) != ("Move the ask" in message)
+
+
+# --- the sitrep handoff, which is the commonest shape of all ----------------
+
+@pytest.mark.parametrize("text", [
+    "- Needs you: whether to commit this now.",
+    "**Needs you:** two things. Whether to commit, and whether the draft belongs here.",
+    "Needs you: a decision on the corpus re-run.",
+])
+def test_a_sitrep_needs_you_line_fires(tmp_path, text):
+    """The commonest shape and the one every other pattern missed. It holds no
+    question, no outward verb and no dispute."""
+    assert stop(tmp_path, text)[0] == 2
+
+
+@pytest.mark.parametrize("text", [
+    "- Needs you: nothing",
+    "- Needs you: none",
+    "- Needs you: nothing, and that is the point.",
+])
+def test_needs_you_nothing_is_the_correct_answer_and_does_not_fire(tmp_path, text):
+    """Firing here would punish the report that has no decision in it."""
+    assert stop(tmp_path, text) == (0, "")
+
+
+def test_prose_that_merely_mentions_needing_someone_does_not_fire(tmp_path):
+    """The pattern is anchored to the line, not floating in the sentence."""
+    assert stop(tmp_path, "The report needs your review of the numbers.") == (0, "")
+
+
+def test_a_real_sitrep_is_told_to_brief_the_ask_not_to_rewrite_itself(tmp_path):
+    """The shape from a live session: a sound report whose two decisions arrive
+    500 words in, unpriced.
+
+    The report is not broken. Telling its author that background and current
+    situation are missing is false, because everything above the line is both."""
+    text = ("FINDINGS. " + "The suite passes and the gate exits zero. " * 40 +
+            "\n- Needs you: whether to commit this now.")
+    _, message = stop(tmp_path, text)
+    assert "This report is fine" in message
+    assert "do not write them again" in message
+    assert "Missing here" not in message
+    assert "Move the ask to the top" not in message
+
+
+def test_the_three_advices_are_mutually_exclusive(tmp_path):
+    """Each names a different defect with a different fix, and giving two at
+    once is what made the advice a wall."""
+    cases = {
+        "needs_you": "FINDINGS. Fine. \n- Needs you: whether to commit now.",
+        "buried": ("Measured this turn, the pool holds the remote. " * 40
+                   + "That is your call, not mine."),
+        "bare": "Should I ship it?",
+    }
+    seen = []
+    for text in cases.values():
+        _, m = stop(tmp_path, text)
+        seen.append(("This report is fine" in m, "Move the ask" in m,
+                     "Missing here" in m))
+    for flags in seen:
+        assert sum(flags) == 1, flags
+    assert len(set(seen)) == 3

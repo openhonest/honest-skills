@@ -43,7 +43,8 @@ ASSESSMENT: <what it means. State confidence: confirmed / likely / unverified.>
 
 ACTION
 - Done: <what you already did>
-- Needs you: <only what you genuinely cannot do yourself>
+- Needs you: <only what you genuinely cannot do yourself. Each item is a
+  decision: brief it, do not list it. See rule 6.>
 
 GAPS: <what you could not verify, and what it would take to close it>
 ```
@@ -51,7 +52,7 @@ GAPS: <what you could not verify, and what it would take to close it>
 Drop any section that is empty. Never drop BLUF and never drop GAPS when a gap
 exists.
 
-## The six rules that get broken
+## The seven rules that get broken
 
 **1. BLUF is the first sentence, not the first paragraph.** Not "Fixed and live."
 Not "Two things." Not a restatement of the question. The finding. If your opening
@@ -74,7 +75,21 @@ guessing, and guessing goes in GAPS, not in FINDINGS.
 not run, say which. If a number is contaminated, say by what. A clean report of
 a messy result beats a tidy report that omits the mess.
 
-**6. "Needs you" is only what you genuinely cannot do.** Before writing a line
+**6. A "Needs you" item is a decision, so brief it as one.** The moment you
+write a line under "Needs you," stop reporting and hand off to the
+decision-brief skill. Put its recommendation in the BLUF, at the top, and give
+it options with what each costs and buys, plus the cost of doing nothing.
+
+A bare line reading "Needs you: whether to commit this now" is the failure this
+format exists to prevent, wearing the format. It arrives 500 words in, it names
+no options, it prices nothing, and it asks the reader to reconstruct the
+decision from evidence arranged for the writer. Nobody can hold 500 words to
+reach it, and nobody should have to.
+
+Two items means two briefs, or one brief with the choices numbered. Never a
+list of unpriced asks.
+
+**7. "Needs you" is only what you genuinely cannot do.** Before writing a line
 under it, ask whether you could find the answer yourself in the next five
 minutes. If you could, go and find it. The list is for things blocked on
 something you do not have: a login, an account action, a message sent under

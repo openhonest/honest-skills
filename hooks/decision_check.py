@@ -78,6 +78,14 @@ TAIL_BYTES = 400_000
 # a question mark that a plain statement of handoff does not carry.
 HANDS_THE_DECISION_OVER = (
     r"\byour call\b",
+    # A sitrep's own handoff line, and the most common shape of all. It
+    # arrives hundreds of words in, names no options and prices nothing,
+    # and none of the other patterns touch it: "Needs you: whether to
+    # commit this now" holds no question, no outward verb and no dispute.
+    # The negative lookahead matters: "Needs you: nothing" is the line
+    # that says there is no decision, and firing on it would punish the
+    # correct answer.
+    r"^\s*[-*]?\s*\*{0,2}Needs you\*{0,2}\s*:\s*(?!nothing\b|none\b|n/a\b)\S",
     r"\byour (?:decision|choice)\b",
     r"\bup to you\b",
     r"\bnot mine to (?:make|call|decide)\b",
@@ -169,8 +177,15 @@ def last_assistant_text(transcript: str) -> str:
     return ""
 
 
+# HANDS_THE_DECISION_OVER holds a line-anchored pattern, so every search over
+# it carries MULTILINE. Without it "^" matched only the start of the whole
+# message: the pattern passed a one-line test and missed every real sitrep,
+# where the handoff sits on its own line hundreds of words down.
+LINE = re.I | re.M
+
+
 def offers_a_choice(text: str) -> bool:
-    if any(re.search(p, text, re.I) for p in HANDS_THE_DECISION_OVER):
+    if any(re.search(p, text, LINE) for p in HANDS_THE_DECISION_OVER):
         return True
     if "?" not in text:
         return False
@@ -188,7 +203,7 @@ def buried_position(text: str) -> float | None:
     if len(text.split()) < LONG_ENOUGH_TO_BURY:
         return None
     spots = [m.start() for p in HANDS_THE_DECISION_OVER + OFFERS_A_CHOICE
-             for m in re.finditer(p, text, re.I)]
+             for m in re.finditer(p, text, LINE)]
     if not spots:
         return None
     where = min(spots) / len(text)
@@ -260,7 +275,11 @@ def fired_before(session: str, text: str) -> bool:
     return False
 
 
-# Two advices, because two different things are wrong.
+def has_needs_you(text: str) -> bool:
+    return bool(re.search(HANDS_THE_DECISION_OVER[1], text, LINE))
+
+
+# Three advices, because three different things are wrong.
 #
 # A long report whose ask sits at the end already contains everything the
 # reader needs. One line is in the wrong place. Telling its author that all
@@ -269,6 +288,26 @@ def fired_before(session: str, text: str) -> bool:
 # evidence and a stated assessment.
 #
 # A bare question has nothing under it, and that is when the full shape helps.
+# A sitrep with a "Needs you" line is not a broken sitrep. The report is doing
+# its job; the ask inside it is the part that was never briefed. Telling its
+# author that background and current situation are missing is false, because
+# the whole report above the line is both.
+BRIEF_THE_ASK = """This report is fine. The "Needs you" line inside it is not.
+
+An item under "Needs you" is a decision, and it arrived as a bare ask: no
+options, nothing priced, and the reader reaching it only after everything
+above. They cannot answer it without holding the whole report in their head.
+
+Brief that item where they meet it first. It needs three things it does not
+have:
+
+  Options               each with what it costs and what it buys
+  Recommendation        one course of action, named
+  Cost of no action     what happens if they do nothing, in figures
+
+Two items means two briefs, or one with the choices numbered. The background
+and the situation are already written above, so do not write them again."""
+
 MOVE_IT = """{lead}
 
 The ask sits {where:.0f} percent of the way in. To answer it the reader has to
@@ -306,6 +345,8 @@ def advice_for(text: str, lead: str) -> str:
     Position and absence are different defects with different fixes, and an
     earlier version answered both with the same wall of five section names.
     """
+    if has_needs_you(text):
+        return BRIEF_THE_ASK
     where = buried_position(text)
     if where is not None:
         return MOVE_IT.format(lead=lead, where=where * 100)

@@ -10,7 +10,7 @@ The other skills in this repository make a model report what it cannot do. This 
 
 That is the thread running through every rule below. A class holding hidden state cannot tell you what it will do next. A caught-and-swallowed exception reports success for work that failed. An implicit default absorbs the caller's omission, so the program cannot tell "chose 30 seconds" from "forgot to say." A defensive check re-tests something the signature already promised, which means the promise was never trusted. Each is a way for code to be quietly wrong, and each rule removes one.
 
-Sixteen principles follow. The numbering is the Honest Framework's, not this file's, so that a rule number means one thing across every Open Honest artifact.
+Seventeen principles follow. The numbering is the Honest Framework's, not this file's, so that a rule number means one thing across every Open Honest artifact.
 
 ## What decides each rule, and what cannot
 
@@ -136,6 +136,9 @@ A `useEffect` that fetches on mount, a signal handler, an ORM callback: each put
 Route new traffic to the new implementation, leave the old one serving what it already serves, and delete it when nothing reaches it. Do not rewrite in place.
 
 Nothing checks this one. It is a property of how you sequence work, not of the code, and no linter will ever see it.
+
+### 17. Atomic test-and-set over check-then-act
+A guard that reads a shared value and then writes it is not a guard. Between the read and the write another caller reads the same answer, and both proceed believing they hold the thing exclusively. Any await in between makes the race certain rather than occasional. Use one operation whose return value distinguishes "I took it" from "someone else holds it": an atomic insert, a compare-and-swap, an insert-if-absent. The token written must be unique to the caller, because every later caller reads a shared sentinel back and matches it.
 
 ## How to apply it
 
