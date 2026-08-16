@@ -843,3 +843,37 @@ def test_the_down_advice_names_the_cost_of_asking(tmp_path):
     _, message = stop(tmp_path, text)
     assert "buys nothing" in message
     assert "would genuinely proceed differently" in message
+
+
+# --- the manufactured blocker -----------------------------------------------
+
+def test_effort_priced_as_a_blocker_is_named(tmp_path):
+    """An agent reported "rebuilding them honestly means driving a real
+    database, slower per scenario, say real or double." Asked why that blocked
+    it: "It isn't. I already stood one up three times today in four lines
+    each." Its own report had named the answer two paragraphs earlier."""
+    text = ("FINDINGS. 29 of 94 scenarios fail.\n"
+            "- Needs you: rebuilding them honestly means driving a real "
+            "SQLite. Slower per scenario. Say real or double.")
+    _, message = stop(tmp_path, text)
+    assert "effort is not a cost to the reader" in message
+    assert "CANNOT do" in message
+
+
+@pytest.mark.parametrize("text", [
+    "FINDINGS. Ready.\n- Needs you: whether to push this to the public remote.",
+    "FINDINGS. Done.\n- Needs you: the ROR login, which I do not have.",
+])
+def test_a_genuine_blocker_is_not_accused_of_manufacturing_one(tmp_path, text):
+    """Permission and capability are the two that survive. Adding the note to
+    them would teach the reader to skip it."""
+    _, message = stop(tmp_path, text)
+    assert "effort is not a cost to the reader" not in message
+
+
+def test_the_effort_words_are_read_as_prose_not_as_mentions(tmp_path):
+    """A report quoting the word slower must not trip it."""
+    text = ('FINDINGS. Fixed.\n- Needs you: the login. I removed the phrase '
+            '"slower per scenario" from the draft.')
+    _, message = stop(tmp_path, text)
+    assert "effort is not a cost to the reader" not in message

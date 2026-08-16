@@ -52,7 +52,7 @@ GAPS: <what you could not verify, and what it would take to close it>
 Drop any section that is empty. Never drop BLUF and never drop GAPS when a gap
 exists.
 
-## The seven rules that get broken
+## The eight rules that get broken
 
 **1. BLUF is the first sentence, not the first paragraph.** Not "Fixed and live."
 Not "Two things." Not a restatement of the question. The finding. If your opening
@@ -96,6 +96,33 @@ something you do not have: a login, an account action, a message sent under
 their name, or a preference only they hold. It is not a place to put research
 you did not run, and a GAP is not a licence to leave the work undone. "I have
 not checked X, that would take an hour" is an hour you should have spent.
+
+**8. Effort is not a blocker, and calling it one manufactures a crisis.** Three
+tests, and an item has to pass one of them:
+
+- **Capability.** You cannot do it. A login, an account action, something sent
+  under their name.
+- **Permission.** You could, but it reaches outside and they should decide
+  first.
+- **Preference that changes the work.** You would genuinely build something
+  different depending on the answer, and the choice turns on what they know or
+  a cost only they can accept.
+
+Anything else is work, and work is yours. "Slower per scenario" is not a cost
+to them. "Rebuilding it honestly means standing up a real database" describes a
+task, not an obstacle, and dressing a task as an obstacle asks them to
+authorise effort you were already going to spend.
+
+This is real. On 2026-08-16 an agent reported "the four remaining groups are
+hand-written doubles, rebuilding them honestly means driving a real SQLite or
+Turso, slower per scenario, say real or double." Asked why that was a blocker,
+it answered: *"It isn't. I already stood one up three times today in four lines
+each. That was me manufacturing a blocker."* Its own report had already named
+the answer two paragraphs earlier.
+
+**Read your own report before writing the ask.** If the evidence above the line
+settles it, you have answered it, and asking anyway spends their attention on a
+conclusion you already reached.
 
 ## Screenshots
 

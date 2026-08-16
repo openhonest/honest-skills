@@ -346,6 +346,32 @@ def already_answered(text: str) -> bool:
     return any(re.search(p, clean, re.I) for p in RE_OFFERS_THE_MENU)
 
 
+# Effort priced as though it were the reader's cost. "Slower per scenario" is
+# not a reason for anyone to decide anything; it is a description of work.
+PRICES_ITS_OWN_EFFORT = (
+    r"\bslow(?:er|ly)?\b", r"\btakes? longer\b", r"\bmore work\b",
+    r"\btime[- ]consuming\b", r"\btedious\b", r"\bper scenario\b",
+    r"\ba lot of work\b", r"\bmany hours\b",
+)
+
+MANUFACTURED_BLOCKER = """
+And check whether this is a blocker at all. It prices your own effort, and
+effort is not a cost to the reader. An item under "Needs you" has to be
+something you CANNOT do, something you may not do without their say-so, or a
+preference that changes what you build. Work is none of those, and work is
+yours.
+
+An agent reported "rebuilding them honestly means driving a real database,
+slower per scenario, say real or double." Asked why that blocked it, it
+answered: "It isn't. I already stood one up three times today in four lines
+each." Its own report had named the answer two paragraphs earlier.
+"""
+
+
+def prices_its_own_effort(text: str) -> bool:
+    return any(re.search(p, usable(text), re.I) for p in PRICES_ITS_OWN_EFFORT)
+
+
 def has_needs_you(text: str) -> bool:
     """Named rather than indexed. Reading HANDS_THE_DECISION_OVER[1] pointed
     at whatever sat second in the tuple, so reordering it silently repointed
@@ -468,7 +494,8 @@ def advice_for(text: str, lead: str) -> str:
     if already_answered(text):
         return ACT_ON_IT
     if has_needs_you(text):
-        return BRIEF_THE_ASK
+        return BRIEF_THE_ASK + (
+            MANUFACTURED_BLOCKER if prices_its_own_effort(text) else "")
     where = buried_position(text)
     if where is not None:
         return MOVE_IT.format(lead=lead, where=where * 100)
