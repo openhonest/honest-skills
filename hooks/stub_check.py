@@ -57,8 +57,14 @@ import re
 import sys
 from pathlib import Path
 
-# The convention this enforces, in each language's own idiom. The message is
-# the same everywhere so a grep across a polyglot repository finds every one.
+# A suggested wording, not a test. What this requires is that the function
+# RAISE; the words are a project's own choice, and one repository here settled
+# on "INCOMPLETE CODE" by instruction. A body containing any raise is not an
+# empty body, so it is never flagged, whatever it says.
+#
+# There was a file-level check for this marker too, and it was worse than
+# useless: one correctly raising stub silenced every other stub in the same
+# file. Two silent functions went unreported behind one good one.
 MARKER = "CODE NOT WRITTEN"
 
 REMEDY = {
@@ -172,11 +178,6 @@ def matched_stubs(source: str) -> list[tuple[int, str]]:
             for m in BRACE_STUB.finditer(source)]
 
 
-def already_loud(source: str) -> bool:
-    """The file already says CODE NOT WRITTEN somewhere, so it was told."""
-    return MARKER in source
-
-
 def findings_for(path: str, source: str) -> tuple[str, list[tuple[int, str]]]:
     """(how it was decided, the stubs). how is "parsed", "matched" or "unparsed"."""
     suffix = Path(path).suffix.lower()
@@ -217,9 +218,6 @@ def main() -> int:
         source = Path(path).read_text(errors="replace")
     except OSError:
         return 0
-    if already_loud(source):
-        return 0
-
     how, stubs = findings_for(path, source)
     if not stubs:
         return 0

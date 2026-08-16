@@ -196,12 +196,33 @@ def test_a_stub_surfaces_on_stderr_with_exit_2(tmp_path, monkeypatch):
     assert "SILENT_STUB" in err and "NotImplementedError" in err
 
 
-def test_a_file_that_already_says_so_is_silent(tmp_path, monkeypatch):
-    """Once told, it stays told. Repeating it on every edit is how an alarm
-    becomes wallpaper."""
+def test_a_function_that_raises_is_not_a_stub(tmp_path, monkeypatch):
+    """A body containing a raise is not an empty body, so it is never flagged.
+    That is true whatever the message says, which is why the wording is a
+    suggestion rather than a test."""
     f = tmp_path / "gw.py"
     f.write_text('def charge(c, a):\n    raise NotImplementedError("CODE NOT WRITTEN")\n')
     assert run_hook(payload(f), monkeypatch) == (0, "")
+
+
+@pytest.mark.parametrize("message", [
+    '"CODE NOT WRITTEN"', '"INCOMPLETE CODE: charge cannot answer"', '"todo"', "",
+])
+def test_any_wording_satisfies_it(message):
+    """One repository here was told to use INCOMPLETE CODE. A hook that
+    insisted on its own string would fight that instruction."""
+    assert sc.python_stubs(f"def charge(c):\n    raise NotImplementedError({message})\n") == []
+
+
+def test_one_good_stub_does_not_silence_the_others(tmp_path, monkeypatch):
+    """A file-level check for the marker suppressed the whole file, so two
+    silent functions went unreported behind one that raised correctly."""
+    f = tmp_path / "gw.py"
+    f.write_text('def good(c):\n    raise NotImplementedError("CODE NOT WRITTEN")\n\n'
+                 'def silent_one(c):\n    pass\n\ndef silent_two(c):\n    pass\n')
+    code, err = run_hook(payload(f), monkeypatch)
+    assert code == 2
+    assert "silent_one" in err and "silent_two" in err and "good" not in err
 
 
 def test_a_written_file_is_silent(tmp_path, monkeypatch):

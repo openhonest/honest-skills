@@ -147,9 +147,15 @@ def charge(card, amount):
     raise NotImplementedError("CODE NOT WRITTEN")
 ```
 
-The same marker in every language, so one grep across a polyglot repository
-finds all of them: `throw new Error`, `panic`, `todo!`,
+Each language gets its own idiom: `throw new Error`, `panic`, `todo!`,
 `UnsupportedOperationException`, `NotImplementedException`.
+
+**The wording is a suggestion, not a test.** What this requires is that the
+function raise. A body containing any raise is not an empty body and is never
+flagged, whatever the message says, so a project that standardises on its own
+phrase is not fought. There was a file-level check for one exact marker, and it
+was worse than useless: one correctly raising stub silenced every other stub in
+the same file.
 
 **Most of the work is not firing.** An empty body is correct more often than it
 is a stub, and a hook that flags `@abstractmethod` is a hook nobody keeps.
