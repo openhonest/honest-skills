@@ -64,10 +64,14 @@ def test_every_missing_section_fails(section):
 
 def test_sections_out_of_order_fail():
     """The reader stops when they have what they need, so a recommendation
-    below the background is one nobody read."""
-    text = ("Recommendation: do the thing.\n\nBackground. Some history.\n\n"
-            "Current situation. It is bad.\n\nOptions.\n\n- a costs an hour\n"
-            "- b costs a day\n\nCost of no action. 3 days lost.\n")
+    below the options is one they had to work to reach.
+
+    This used to open on the recommendation, which is now allowed: leading
+    with the point is the rule working, not breaking. See
+    test_leading_with_the_recommendation_is_not_out_of_order."""
+    text = ("Background. Some history.\n\nOptions.\n\n- a costs an hour\n"
+            "- b costs a day\n\nCurrent situation. It is bad.\n\n"
+            "Recommendation: do the thing.\n\nCost of no action. 3 days lost.\n")
     r = decision.analyse_brief(text, "t")
     assert "sections_in_order" in r["gating_failures"]
 
@@ -301,3 +305,37 @@ def test_a_readable_file_path_is_analysed_in_process(monkeypatch, capsys, tmp_pa
     monkeypatch.setattr(sys, "argv", ["decision.py", str(f)])
     assert decision.main() == 0
     assert "decision brief: ok" in capsys.readouterr().out
+
+
+def test_leading_with_the_recommendation_is_not_out_of_order():
+    """The order exists so the reader meets the point early. Opening on it
+    meets that better than position four does.
+
+    An earlier version failed this shape, which put this checker in direct
+    contradiction with the hook that tells a model to put the ask first."""
+    text = ("Recommendation: delete the local copies.\n\n" +
+            GOOD.replace("Recommendation: skip them with the reason, then "
+                         "rebuild next week.\n\n", ""))
+    r = decision.analyse_brief(text, "t")
+    assert "sections_in_order" not in r["gating_failures"]
+    assert r["checks"]["sections_in_order"]["leads_with_the_recommendation"]
+
+
+def test_any_other_reordering_still_fails():
+    """Only the recommendation may lead. Background after options is still a
+    reader reconstructing the brief for themselves."""
+    text = ("Options.\n\n- a costs an hour\n- b costs a day\n\n"
+            "Background. Some history.\n\nCurrent situation. It is bad.\n\n"
+            "Recommendation: do a.\n\nCost of no action. 3 days lost.\n")
+    r = decision.analyse_brief(text, "t")
+    assert "sections_in_order" in r["gating_failures"]
+
+
+def test_the_report_names_the_order_it_actually_found():
+    """The reader needs to see the order they wrote, not just that it was
+    wrong. This line went uncovered when the only out-of-order test moved."""
+    text = ("Background. Some.\n\nOptions.\n\n- a costs an hour\n- b costs a day"
+            "\n\nCurrent situation. Bad.\n\nRecommendation: do a.\n\n"
+            "Cost of no action. 3 days lost.\n")
+    out = decision.render(decision.analyse_brief(text, "t"))
+    assert "out of order: background then options then situation" in out

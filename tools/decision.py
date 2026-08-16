@@ -178,12 +178,22 @@ def analyse_brief(raw: str, source: str) -> dict:
 
     expected = [k for k, _ in SECTIONS]
     seen = [k for k in order if k in expected]
-    in_order = seen == sorted(seen, key=expected.index)
+    # A recommendation in first position is not out of order, it is the rule
+    # working. The order exists so the reader meets the point early; opening on
+    # it and supporting it underneath meets that better than position four
+    # does. An earlier version failed this shape, which put this checker in
+    # direct contradiction with the hook that tells a model to put the ask
+    # first. Two of our own tools disagreeing about the same rule is the defect
+    # this project exists to name, so the checker yielded.
+    rest = seen[1:] if seen[:1] == ["recommendation"] else seen
+    in_order = rest == sorted(rest, key=expected.index)
     checks["sections_in_order"] = {
         "verdict": "pass" if in_order else "fail", "gating": True,
         "found": seen, "expected": expected,
+        "leads_with_the_recommendation": seen[:1] == ["recommendation"],
         "reason": "the reader stops when they have what they need, so a "
-                  "recommendation below the background is one nobody read",
+                  "recommendation below the background is one nobody read. "
+                  "Leading with it is allowed for the same reason",
     }
 
     # Background is the section that swells. It is the easiest to write and the
