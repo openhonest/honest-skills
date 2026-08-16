@@ -428,6 +428,9 @@ def test_an_ask_at_the_end_of_a_long_message_is_named_as_buried(tmp_path):
     _, message = stop(tmp_path, text)
     assert "percent of the way in" in message
     assert "nobody can" in message
+    # The substance is already there. Do not tell them to add five sections.
+    assert "Missing here" not in message
+    assert "Move the ask to the top" in message
 
 
 def test_a_short_message_is_never_called_buried(tmp_path):
@@ -450,3 +453,20 @@ def test_a_long_message_with_no_ask_at_all_is_not_measured_for_burial():
     so the position check has to cope with having nothing to locate."""
     text = "I will push the branch once the suite is green. " * 40
     assert dc.buried_position(text) is None
+
+
+def test_a_bare_question_still_gets_the_full_shape(tmp_path):
+    """Nothing under it, so the five sections are the fix rather than noise."""
+    _, message = stop(tmp_path, "Should I ship it?")
+    assert "Missing here" in message
+    assert "Move the ask to the top" not in message
+
+
+def test_the_two_advices_are_never_both_given(tmp_path):
+    """Position and absence are different defects. Answering both at once is
+    what made the advice a wall on a report that needed one line moved."""
+    long_buried = ("Measured this turn, the pool holds the correct remote. " * 40
+                   + "That is your call, not mine.")
+    for text in (long_buried, "Should I ship it?"):
+        _, message = stop(tmp_path, text)
+        assert ("Missing here" in message) != ("Move the ask" in message)

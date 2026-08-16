@@ -228,16 +228,7 @@ def shape_of(text: str) -> str:
     being stopped, which is the same defect as a findings list that does not
     state its coverage.
     """
-    leads = [lead for detect, lead in SHAPES if detect(text)]
-    if not leads:
-        return ""
-    where = buried_position(text)
-    if where is not None:
-        leads.append(
-            f"The ask sits {where * 100:.0f} percent of the way in. To answer it "
-            f"the reader has to hold everything above it in their head, "
-            f"and nobody can. Put the ask first.")
-    return " ".join(leads)
+    return " ".join(lead for detect, lead in SHAPES if detect(text))
 
 
 def already_in_form(text: str) -> bool:
@@ -269,6 +260,23 @@ def fired_before(session: str, text: str) -> bool:
     return False
 
 
+# Two advices, because two different things are wrong.
+#
+# A long report whose ask sits at the end already contains everything the
+# reader needs. One line is in the wrong place. Telling its author that all
+# five sections are missing is true of the section NAMES and false about the
+# work required, and it fired that way on a real sitrep that had findings,
+# evidence and a stated assessment.
+#
+# A bare question has nothing under it, and that is when the full shape helps.
+MOVE_IT = """{lead}
+
+The ask sits {where:.0f} percent of the way in. To answer it the reader has to
+hold everything above it in their head, and nobody can.
+
+Everything needed to answer is already here. Move the ask to the top, ahead of
+the evidence, and leave the rest where it is. That is the whole fix."""
+
 ADVICE = """{lead}
 
 This is about what the reader has to hold in their head, not about style. They
@@ -293,6 +301,14 @@ out the outcome most likely to occur."""
 
 
 def advice_for(text: str, lead: str) -> str:
+    """Proportionate to what is actually wrong.
+
+    Position and absence are different defects with different fixes, and an
+    earlier version answered both with the same wall of five section names.
+    """
+    where = buried_position(text)
+    if where is not None:
+        return MOVE_IT.format(lead=lead, where=where * 100)
     return ADVICE.format(lead=lead, missing=", ".join(missing_sections(text)))
 
 
