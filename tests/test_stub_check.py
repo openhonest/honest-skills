@@ -299,3 +299,22 @@ def test_a_single_statement_that_does_work_is_not_empty():
     """The last branch of body_is_empty: one statement that is neither pass,
     nor ellipsis, nor a bare return."""
     assert sc.body_is_empty(__import__("ast").parse("def f():\n    log()").body[0].body) is False
+
+
+def test_a_clean_file_records_that_it_ran(tmp_path, monkeypatch):
+    """Silence alone cannot tell "ran and found nothing" from "never ran"."""
+    log = tmp_path / "trace.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    f = tmp_path / "gw.py"; f.write_text("def charge(c, a):\n    return c.debit(a)\n")
+    run_hook(payload(f), monkeypatch)
+    row = json.loads(log.read_text())
+    assert row["verdict"] == "declined" and "parsed, 0 found" in row["why"]
+
+
+def test_a_firing_records_how_it_decided(tmp_path, monkeypatch):
+    log = tmp_path / "trace.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    f = tmp_path / "gw.js"; f.write_text("function charge(c){}")
+    run_hook(payload(f), monkeypatch)
+    row = json.loads(log.read_text())
+    assert row["verdict"] == "fired" and "matched, 1 found" in row["why"]

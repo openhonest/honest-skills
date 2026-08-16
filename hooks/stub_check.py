@@ -57,6 +57,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from trace_hook import trace  # noqa: E402
+
 # A suggested wording, not a test. What this requires is that the function
 # RAISE; the words are a project's own choice, and one repository here settled
 # on "INCOMPLETE CODE" by instruction. A body containing any raise is not an
@@ -219,6 +222,8 @@ def main() -> int:
     except OSError:
         return 0
     how, stubs = findings_for(path, source)
+    trace("PostToolUse:stub", "fired" if stubs else "declined",
+          f"{how}, {len(stubs)} found")
     if not stubs:
         return 0
     print(render(path, how, stubs), file=sys.stderr)
