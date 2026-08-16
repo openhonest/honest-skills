@@ -776,3 +776,35 @@ def test_a_report_about_this_hook_does_not_trip_it(tmp_path):
             'call", and the list missed each in turn. 324 tests, 100 percent '
             'branch coverage. Needs a restart.')
     assert stop(tmp_path, text) == (0, "")
+
+
+# --- the exit, so the hook cannot corner a model into ceremony ---------------
+
+@pytest.mark.parametrize("text", [
+    "Should I ship it?",
+    "FINDINGS. Fine.\n- Needs you: whether to commit now.",
+    "Measured this turn, the pool holds the remote. " * 40 + "That is your call.",
+])
+def test_every_advice_offers_the_exit_first(tmp_path, text):
+    """A session was pushed into writing four options for a decision that had
+    one answer, three of them scenery. "Stop it with this empty ritual. There
+    is only one answer and you know what it is."
+
+    An advice that only says how to fill in the shape is an advice that makes
+    the shape compulsory."""
+    _, message = stop(tmp_path, text)
+    assert "FIRST, THE EXIT" in message
+    assert "do not\nask" in message or "do not ask" in message
+    # First means first: before anything telling you how to fill the shape in.
+    # The move-it advice names no sections at all, so there is nothing to
+    # order against there.
+    for later in ("Options", "Move the ask", "three things"):
+        if later in message:
+            assert message.index("THE EXIT") < message.index(later)
+
+
+def test_the_exit_names_the_test_for_a_real_fork(tmp_path):
+    """"Can I name three courses" is not the test. Anyone can."""
+    _, message = stop(tmp_path, "Should I ship it?")
+    assert "proceed the same way whatever the answer" in message
+    assert "you would actually\ntake" in message or "you would actually take" in message

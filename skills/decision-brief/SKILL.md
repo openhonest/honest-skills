@@ -7,6 +7,18 @@ description: Write a request for a decision the way you would brief an executive
 
 You are asking someone to decide. They will read until they can decide and then stop.
 
+## Do not write one when there is only one answer
+
+**If the evidence points one way, say what you found, say what you are doing, and do it. Do not manufacture alternatives so a form can be filled in.**
+
+This is the failure that matters most, and it happened on 2026-08-16. A session measured a defect, found one sound fix, and produced a brief with four options because the shape asked for options. Three of them were scenery. Adam's reply: *"Stop it with this empty ritual. There is only one answer and you know what it is."* He was right, and the session had known it before writing option B.
+
+Presenting one option and calling it a decision is how consent gets manufactured. Presenting four when there is one is how a decision gets faked, and it is worse, because it spends the reader's attention on alternatives the writer had already rejected and asks them to re-derive a conclusion that was already reached.
+
+The test is not "can I name three courses of action." Anyone can. The test is **whether you would genuinely proceed differently depending on the answer.** If you would not, you are not asking, you are performing. Report it and act.
+
+A decision brief is for a real fork: two or more courses you would actually take, where the choice turns on something the reader knows and you do not, or on a cost only they can accept. Everything else is a finding, and a finding goes in a sitrep.
+
 ## It goes in the reply
 
 **Write the brief as your message. Do not write it to a file unless you were asked for a file.**

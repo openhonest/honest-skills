@@ -368,6 +368,13 @@ def has_needs_you(text: str) -> bool:
 # the whole report above the line is both.
 BRIEF_THE_ASK = """This report is fine. The "Needs you" line inside it is not.
 
+FIRST, THE EXIT. If you would proceed the same way whatever the answer, do not
+ask. Say what you found, say what you are doing, and do it. Manufacturing
+alternatives so this shape can be filled in wastes the reader's attention on
+courses you had already rejected, and it asks them to re-derive a conclusion
+you had already reached. A real fork is two or more courses you would actually
+take, where the choice turns on something the reader knows and you do not.
+
 An item under "Needs you" is a decision, and it arrived as a bare ask: no
 options, nothing priced, and the reader reaching it only after everything
 above. They cannot answer it without holding the whole report in their head.
@@ -384,6 +391,13 @@ and the situation are already written above, so do not write them again."""
 
 MOVE_IT = """{lead}
 
+FIRST, THE EXIT. If you would proceed the same way whatever the answer, do not
+ask. Say what you found, say what you are doing, and do it. Manufacturing
+alternatives so this shape can be filled in wastes the reader's attention on
+courses you had already rejected, and it asks them to re-derive a conclusion
+you had already reached. A real fork is two or more courses you would actually
+take, where the choice turns on something the reader knows and you do not.
+
 The ask sits {where:.0f} percent of the way in. To answer it the reader has to
 hold everything above it in their head, and nobody can.
 
@@ -391,6 +405,13 @@ Everything needed to answer is already here. Move the ask to the top, ahead of
 the evidence, and leave the rest where it is. That is the whole fix."""
 
 ADVICE = """{lead}
+
+FIRST, THE EXIT. If you would proceed the same way whatever the answer, do not
+ask. Say what you found, say what you are doing, and do it. Manufacturing
+alternatives so this shape can be filled in wastes the reader's attention on
+courses you had already rejected, and it asks them to re-derive a conclusion
+you had already reached. A real fork is two or more courses you would actually
+take, where the choice turns on something the reader knows and you do not.
 
 This is about what the reader has to hold in their head, not about style. They
 should be able to answer you without remembering anything. Right now they have
