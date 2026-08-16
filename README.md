@@ -157,6 +157,17 @@ phrase is not fought. There was a file-level check for one exact marker, and it
 was worse than useless: one correctly raising stub silenced every other stub in
 the same file.
 
+**A `Then` step that checks nothing is caught too, and it is the worse case.**
+A stub returns `None` and something downstream eventually notices. A `Then`
+step with no assertion publishes a pass, and the suite counts it. This finds a
+`@then` whose body holds no `assert`, no `raise`, no `pytest.raises`, and no
+call whose name says it checks. `Given` and `When` set things up and are left
+alone; only `Then` is the assertion.
+
+A step that calls a helper which asserts internally looks empty from here and
+is not flagged as anything. That is a miss, and the errors fall that way on
+purpose.
+
 **Most of the work is not firing.** An empty body is correct more often than it
 is a stub, and a hook that flags `@abstractmethod` is a hook nobody keeps.
 Excluded by name: abstract methods, `Protocol` and `ABC` members, `@overload`

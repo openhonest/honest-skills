@@ -318,3 +318,73 @@ def test_a_firing_records_how_it_decided(tmp_path, monkeypatch):
     run_hook(payload(f), monkeypatch)
     row = json.loads(log.read_text())
     assert row["verdict"] == "fired" and "matched, 1 found" in row["why"]
+
+
+# --- a Then step that checks nothing ----------------------------------------
+
+@pytest.mark.parametrize("body", [
+    "    pass\n",
+    '    result = ctx["result"]\n',
+    "    ctx['n']\n",
+])
+def test_a_then_step_that_asserts_nothing_is_found(body):
+    """Worse than a stub. A stub returns None and something downstream
+    notices; this publishes a pass and the suite counts it."""
+    src = f'from pytest_bdd import then\n@then("the count is 1000")\ndef _(ctx):\n{body}'
+    assert sc.python_stubs(src)
+
+
+@pytest.mark.parametrize("body", [
+    '    assert ctx["n"] == 1000\n',
+    '    self.assertEqual(ctx["n"], 1000)\n',
+    "    with pytest.raises(ValueError):\n        go()\n",
+    '    expect(ctx["n"]).to_equal(1000)\n',
+    '    raise AssertionError("no")\n',
+    "    self.fail('not yet')\n",
+])
+def test_a_then_step_that_can_fail_is_left_alone(body):
+    src = f'from pytest_bdd import then\n@then("x")\ndef _(ctx):\n{body}'
+    assert sc.python_stubs(src) == []
+
+
+@pytest.mark.parametrize("step", ["given", "when"])
+def test_given_and_when_may_assert_nothing(step):
+    """They set things up. Only Then is the assertion."""
+    src = (f'from pytest_bdd import {step}\n@{step}("a todo")\n'
+           f'def _(ctx):\n    ctx["t"] = make()\n')
+    assert sc.python_stubs(src) == []
+
+
+def test_a_helper_that_asserts_internally_is_a_miss_not_an_alarm():
+    """Calling a helper that asserts inside it is invisible here. The errors
+    fall toward missing one, never toward blocking a real check."""
+    src = ('from pytest_bdd import then\n@then("x")\n'
+           'def _(ctx):\n    check_invariants(ctx)\n')
+    assert sc.python_stubs(src)          # a miss, recorded rather than hidden
+
+
+def test_the_report_says_why_a_then_step_is_worse():
+    out = sc.render("x.py", "parsed", [(1, "_ (Then step, asserts nothing)")])
+    assert "publishes a pass" in out and "Write the assertion" in out
+
+
+def test_the_report_omits_that_line_for_an_ordinary_stub():
+    out = sc.render("x.py", "parsed", [(1, "charge")])
+    assert "publishes a pass" not in out
+
+
+def test_a_with_block_that_is_not_an_assertion_does_not_count():
+    """`with open(...)` is doing work, not checking it. Treating any context
+    manager as an assertion would let every file-handling step through."""
+    src = ('from pytest_bdd import then\n@then("x")\n'
+           'def _(ctx):\n    with open(ctx["path"]) as fh:\n        ctx["text"] = fh.read()\n')
+    assert sc.python_stubs(src)
+
+
+def test_a_multi_item_with_is_searched_past_the_first():
+    """`with open(p) as fh, pytest.raises(ValueError):` checks something, and
+    the checking half is not the first item."""
+    src = ('from pytest_bdd import then\n@then("x")\n'
+           'def _(ctx):\n    with open(ctx["p"]) as fh, pytest.raises(ValueError):\n'
+           '        go(fh)\n')
+    assert sc.python_stubs(src) == []

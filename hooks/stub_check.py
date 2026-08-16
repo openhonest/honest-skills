@@ -83,6 +83,37 @@ REMEDY = {
     ".rb": f'raise NotImplementedError, "{MARKER}"',
 }
 
+# A Then step, in pytest-bdd and in behave. Given and When set things up and
+# are allowed to assert nothing; Then is the assertion, and one that asserts
+# nothing does not merely fail to check, it publishes a pass.
+THEN_DECORATORS = frozenset({"then", "pytest_bdd.then", "behave.then"})
+
+# What counts as actually checking something.
+ASSERTING_CALLS = re.compile(
+    r"^(?:assert|expect|should|verify|fail|raises)|"
+    r"(?:\.assert|\.expect|\.should|\.fail|\.raises)", re.I)
+
+
+def asserts_something(node: ast.AST) -> bool:
+    """True when the body can fail.
+
+    A bare `assert`, a `raise`, a `with pytest.raises(...)`, or a call whose
+    name says it checks: assertEqual, expect_that, should_be, self.fail.
+    Calling a helper that asserts internally is invisible here, which is a
+    miss rather than a false alarm.
+    """
+    for sub_node in ast.walk(node):
+        if isinstance(sub_node, (ast.Assert, ast.Raise)):
+            return True
+        if isinstance(sub_node, ast.Call) and ASSERTING_CALLS.search(dotted(sub_node)):
+            return True
+        if isinstance(sub_node, (ast.With, ast.AsyncWith)):
+            for item in sub_node.items:
+                if ASSERTING_CALLS.search(dotted(item.context_expr)):
+                    return True
+    return False
+
+
 # Decorators that mean the empty body is the point.
 DECLARATION_DECORATORS = frozenset({
     "abstractmethod", "abstractproperty", "overload",
@@ -155,10 +186,16 @@ def python_stubs(source: str) -> list[tuple[int, str]] | None:
             continue
         if node in declaration_classes:
             continue
-        if {dotted(d) for d in node.decorator_list} & DECLARATION_DECORATORS:
+        decorators = {dotted(d) for d in node.decorator_list}
+        if decorators & DECLARATION_DECORATORS:
             continue
         if body_is_empty(node.body):
             found.append((node.lineno, node.name))
+        elif decorators & THEN_DECORATORS and not asserts_something(node):
+            # It does work and checks nothing, so it cannot fail. That is
+            # worse than an empty stub: a stub returns None and something
+            # downstream notices, while this publishes a pass.
+            found.append((node.lineno, f"{node.name} (Then step, asserts nothing)"))
     return found
 
 
@@ -203,6 +240,10 @@ def render(path: str, how: str, stubs: list[tuple[int, str]]) -> str:
     lines.append("      An empty body returns None to a caller that cannot tell "
                  "'not written' from 'nothing to do', so the first evidence "
                  "arrives somewhere else.")
+    if any("asserts nothing" in what for _, what in stubs):
+        lines.append("      A Then step that checks nothing does not merely "
+                     "fail to check. It publishes a pass, and the suite counts "
+                     "it. Write the assertion, or raise until you do.")
     if how == "matched":
         lines.append("      Matched by pattern rather than parsed, so this is "
                      "approximate. Python is the only language parsed here.")
