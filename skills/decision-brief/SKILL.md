@@ -7,6 +7,18 @@ description: Write a request for a decision the way you would brief an executive
 
 You are asking someone to decide. They will read until they can decide and then stop.
 
+## It goes in the reply
+
+**Write the brief as your message. Do not write it to a file unless you were asked for a file.**
+
+This is the failure this skill produced on its first real use. Asked to brief two open decisions, it wrote a 43-line document to `decisions/`, then spent four turns adjusting the column widths of a table nobody had seen, and the person waiting for an answer got a filename. The document was deleted and the question was asked again.
+
+A brief is a message. The reader is in the conversation, the decision is blocking them now, and a file is one more thing to open. If you find yourself creating a directory for this, you have already lost the reader.
+
+**One decision, one brief.** Two open questions means two briefs in the same reply, or one brief whose options are numbered across both. Never one brief that answers whichever question was easiest to write up.
+
+**Never spend a turn on formatting.** If a table will not fit in 80 columns, write the options as a list instead. Rebuilding a table is work the reader never sees and never asked for.
+
 Five sections, this order:
 
 ```
@@ -17,7 +29,15 @@ Recommendation        one course of action, named
 Cost of no action     what happens if they do nothing
 ```
 
-Run `uv run tools/decision.py brief.md` before you send it. It gates the form and refuses to judge the content, which is the division that matters: the checker cannot tell whether your recommendation follows, and it says so every time rather than letting you assume it approved.
+Check it before you send it. The checker reads stdin, so the brief never has to touch disk:
+
+```sh
+uv run tools/decision.py <<'BRIEF'
+Recommendation: ...
+BRIEF
+```
+
+It gates the form and refuses to judge the content, which is the division that matters: the checker cannot tell whether your recommendation follows, and it says so every time rather than letting you assume it approved.
 
 ## The two rules people break
 
