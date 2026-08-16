@@ -5,32 +5,44 @@ Two events, because there is no third:
 
     PreToolUse on AskUserQuestion   a decision by construction, so this fires
                                     on every call and is exact
-    Stop                            the model asked in prose, which is where
-                                    most questions actually live
+    Stop                            everything else, which is where the
+                                    problem actually lives
 
 There is no hook that fires when the model asks a question in prose. Stop is
 the only place to stand, and it fires on every turn, so almost all of this file
 is about not firing.
 
+THE FIRST VERSION WAS BEST AT THE CASE THAT NEEDED IT LEAST
+
+It looked for a question offering alternatives. A clean question is already
+legible; nobody misses "Should I ship it?". The decision that gets past a reader
+is the one settled inside a dense paragraph of qualifiers, and the specimen that
+made this obvious carried no question mark anywhere. It disputed a ruling in
+item 2 of a status update and announced an outward action in its closing line.
+So there are three shapes now, and two of them never involve a question.
+
 WHY THE BAR IS SO HIGH
 
-The costs are not symmetric. Missing a decision question costs nothing: the
-conversation carries on exactly as it would have. Blocking an ordinary question
+The costs are not symmetric. Missing a buried decision costs nothing: the
+conversation carries on exactly as it would have. Firing on an ordinary message
 costs a wasted turn and teaches the reader to switch the hook off, and a hook
-that is switched off catches nothing at all. So this fires only when the text is
-unambiguously offering a choice, and it fires at most once for any one message.
+that is switched off catches nothing at all. Measured across 581 real messages,
+the three shapes together fire on about 5 percent.
 
 WHAT IT REFUSES TO DECIDE
 
-Whether a question deserves a brief. That is intent, and intent is not readable
-from text. All this can see is whether the words present the reader with
-alternatives, which is narrower than "is this important" and is the only part
-that is decidable. decision.py takes the same line one level down: it gates the
-form of a brief and reports every judgment about content as unassessed.
+Whether a message deserves a brief. That is intent, and intent is not readable
+from text. All this sees is whether the words offer alternatives, announce an
+outward action, or dispute a ruling. Each is narrower than "is this important"
+and each is the only part that is decidable. decision.py takes the same line one
+level down: it gates the form of a brief and reports every judgment about
+content as unassessed.
 
-Consequence, stated rather than discovered: a genuine decision put in plain
-words with no alternatives named will pass straight through. That is a miss and
-it is the direction the errors are meant to fall in.
+Consequence, stated rather than discovered: a decision put in plain words with
+no alternatives named, no outward verb and no contradiction passes straight
+through. Density alone does not trigger anything, because a long paragraph is
+not evidence that something is hidden in it. That is a miss, and it is the
+direction the errors are meant to fall in.
 """
 from __future__ import annotations
 
@@ -49,10 +61,34 @@ import decision  # noqa: E402
 # on every turn is a hook that gets uninstalled for being slow.
 TAIL_BYTES = 400_000
 
-# The reader is being offered alternatives. Each of these says so in words that
-# do not also occur in an ordinary request for a fact. "Which file did you
-# mean?" is deliberately not matched: it asks the reader to identify something,
-# not to choose between courses of action.
+# THREE SHAPES, BECAUSE A BURIED DECISION IS NOT A QUESTION
+#
+# The first version looked only for a question offering alternatives, which
+# made it best at the case that needed it least. A clean question is already
+# legible. The one that hides is a decision settled inside a dense paragraph,
+# and the specimen that showed this carried no question mark at all: it
+# disputed a ruling in item 2 of a status update and announced an outward
+# action in its closing line.
+#
+# So there are three, and each gets its own advice, because the fix differs.
+
+# 1a. An explicit handoff. These say "you decide" in so many words and need no
+# question mark to do it. A specimen ending "that is a change to signup code,
+# your call, not mine" was missed entirely because the whole shape was gated on
+# a question mark that a plain statement of handoff does not carry.
+HANDS_THE_DECISION_OVER = (
+    r"\byour call\b",
+    r"\byour (?:decision|choice)\b",
+    r"\bup to you\b",
+    r"\bnot mine to (?:make|call|decide)\b",
+    r"\bI(?:'ll| will) leave (?:that|this|it) to you\b",
+)
+
+# 1b. The reader is being offered alternatives, in words that do not also occur
+# in an ordinary request for a fact. These do need a question mark, because
+# without one they are ordinary prose: "you should ask whether" is not an ask.
+# "Which file did you mean?" is deliberately not matched: it asks the reader to
+# identify something, not to choose between courses of action.
 OFFERS_A_CHOICE = (
     r"\bshould I\b",
     r"\bshall I\b",
@@ -62,9 +98,38 @@ OFFERS_A_CHOICE = (
     r"\bok(?:ay)? to\b",
     r"\bshall we\b",
     r"\bproceed\?",
-    r"\byour call\b",
     r"\bwhich would you prefer\b",
     r"\bdo you approve\b",
+)
+
+# A message this long has room to bury its ask. Below it, the last line is
+# still in view when the reader reaches the first.
+LONG_ENOUGH_TO_BURY = 150     # words
+
+# An ask past this point in a long message is one the reader had to read to.
+BURIED_AFTER = 0.75
+
+# 2. An action that reaches outside, announced rather than offered. Posting a
+# comment, sending mail, pushing, merging: the reader finds out afterwards that
+# a decision was taken. The negative lookahead is not decoration. Without it
+# "I will not push" matched, which is the opposite statement.
+ANNOUNCES_OUTWARD_ACTION = (
+    r"\bI(?:'ll| will| am going to| plan to| intend to)\s+"
+    r"(?!not\b|never\b)(?:\w+\s+){0,3}?"
+    r"(?:post|comment|repl(?:y|ies)|send|email|publish|submit|merge|push|"
+    r"deploy|release|file|close|assign|announce|share|upload|tweet)\b",
+)
+
+# 3. A prior instruction or ruling being contradicted, stated as a finding.
+# Whose call wins is a decision, and reporting the disagreement is not the same
+# as putting it to the person whose call it was.
+CONTRADICTS_A_RULING = (
+    r"\bI do(?: not|n't) confirm\b",
+    r"\bI cannot confirm\b",
+    r"\bdisagrees? with\b",
+    r"\bthe .{0,30}premise (?:does not|doesn't) hold\b",
+    r"\bcontrary to (?:the|your|his|her|their)\b",
+    r"\bthat framing is wrong\b",
 )
 
 # Sections that mean the message is already in the form. Three of five is the
@@ -105,9 +170,74 @@ def last_assistant_text(transcript: str) -> str:
 
 
 def offers_a_choice(text: str) -> bool:
+    if any(re.search(p, text, re.I) for p in HANDS_THE_DECISION_OVER):
+        return True
     if "?" not in text:
         return False
     return any(re.search(p, text, re.I) for p in OFFERS_A_CHOICE)
+
+
+def buried_position(text: str) -> float | None:
+    """Where the ask sits, as a fraction, or None when it is not buried.
+
+    Returns nothing for a short message: there is nowhere to hide in four
+    lines. In a long one, an ask in the closing quarter is an ask the reader
+    had to read four hundred words to reach, which is the Army packaging rule
+    broken in the one place it costs the most.
+    """
+    if len(text.split()) < LONG_ENOUGH_TO_BURY:
+        return None
+    spots = [m.start() for p in HANDS_THE_DECISION_OVER + OFFERS_A_CHOICE
+             for m in re.finditer(p, text, re.I)]
+    if not spots:
+        return None
+    where = min(spots) / len(text)
+    return where if where >= BURIED_AFTER else None
+
+
+def announces_outward_action(text: str) -> bool:
+    return any(re.search(p, text, re.I) for p in ANNOUNCES_OUTWARD_ACTION)
+
+
+def contradicts_a_ruling(text: str) -> bool:
+    return any(re.search(p, text, re.I) for p in CONTRADICTS_A_RULING)
+
+
+# The lead sentence of the advice, per shape. The five sections follow in every
+# case; what changes is the reason the reader is being handed the decision.
+SHAPES = (
+    (offers_a_choice,
+     "This is asking for a decision."),
+    (announces_outward_action,
+     "This announces an action that reaches outside this conversation. The "
+     "reader finds out afterwards that a decision was taken, so it is theirs "
+     "to make first."),
+    (contradicts_a_ruling,
+     "This disputes a ruling. Whose call wins is a decision, and reporting the "
+     "disagreement is not the same as putting it to the person whose call it "
+     "was."),
+)
+
+
+def shape_of(text: str) -> str:
+    """Every shape that matches, not the first.
+
+    A message can dispute a ruling and announce an outward action in the same
+    breath, and the specimen that prompted this did exactly that. Reporting
+    only the first would hand the reader a partial account of why they are
+    being stopped, which is the same defect as a findings list that does not
+    state its coverage.
+    """
+    leads = [lead for detect, lead in SHAPES if detect(text)]
+    if not leads:
+        return ""
+    where = buried_position(text)
+    if where is not None:
+        leads.append(
+            f"The ask sits {where * 100:.0f} percent of the way in. To answer it "
+            f"the reader has to hold everything above it in their head, "
+            f"and nobody can. Put the ask first.")
+    return " ".join(leads)
 
 
 def already_in_form(text: str) -> bool:
@@ -139,8 +269,15 @@ def fired_before(session: str, text: str) -> bool:
     return False
 
 
-ADVICE = """This is asking for a decision. Put it in the five sections so the
-reader can decide from the message rather than reconstruct it:
+ADVICE = """{lead}
+
+This is about what the reader has to hold in their head, not about style. They
+should be able to answer you without remembering anything. Right now they have
+to carry the evidence forward and assemble the question themselves, and that is
+work you are doing to them rather than for them.
+
+So put the ask where they meet it first, and put underneath it only what they
+need to answer:
 
   Background            what they need to know and do not
   Current situation     what is true now, and why it forces a choice
@@ -155,17 +292,20 @@ decision, so it wins by default, and a request that does not price it has left
 out the outcome most likely to occur."""
 
 
-def advice_for(text: str) -> str:
-    return ADVICE.format(missing=", ".join(missing_sections(text)))
+def advice_for(text: str, lead: str) -> str:
+    return ADVICE.format(lead=lead, missing=", ".join(missing_sections(text)))
 
 
 def on_stop(payload: dict) -> tuple[int, str]:
     text = last_assistant_text(read_tail(payload.get("transcript_path") or ""))
-    if not text or not offers_a_choice(text) or already_in_form(text):
+    if not text or already_in_form(text):
+        return 0, ""
+    lead = shape_of(text)
+    if not lead:
         return 0, ""
     if fired_before(payload.get("session_id") or "", text):
         return 0, ""
-    return 2, advice_for(text)
+    return 2, advice_for(text, lead)
 
 
 def on_pre_tool_use(payload: dict) -> tuple[int, str]:
@@ -182,7 +322,7 @@ def on_pre_tool_use(payload: dict) -> tuple[int, str]:
         return 0, ""
     if fired_before(payload.get("session_id") or "", text or "<no text>"):
         return 0, ""
-    return 2, advice_for(text)
+    return 2, advice_for(text, SHAPES[0][1])
 
 
 EVENTS = {"Stop": on_stop, "PreToolUse": on_pre_tool_use}

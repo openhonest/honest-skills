@@ -319,3 +319,134 @@ def test_main_prints_nothing_when_the_handler_declines(tmp_path, monkeypatch):
         "transcript_path": transcript(tmp_path, "The tests pass."),
         "session_id": str(uuid.uuid4())})
     assert run(payload, monkeypatch) == (0, "")
+
+
+# --- the buried shapes, which carry no question mark ------------------------
+#
+# Every fixture here is written from scratch. The message that showed this gap
+# was client work, so its wording stays out of a public repository; what is
+# reused is the shape, not the text.
+
+@pytest.mark.parametrize("text", [
+    "I'll post the finding on the ticket. Status and owner unchanged.",
+    "I will push the branch once the suite is green.",
+    "Traced it to the annualised return. I am going to comment on the issue.",
+    "I plan to send the summary to the list this afternoon.",
+    "I'll merge it after lunch.",
+])
+def test_an_outward_action_announced_rather_than_offered_fires(tmp_path, text):
+    """The reader finds out afterwards that a decision was taken."""
+    code, message = stop(tmp_path, text)
+    assert code == 2
+    assert "reaches outside this conversation" in message
+
+
+@pytest.mark.parametrize("text", [
+    "I will not push anything until you say so.",
+    "I will never send that without your sign-off.",
+])
+def test_a_negated_outward_action_does_not_fire(tmp_path, text):
+    """"I will not push" is the opposite statement. An earlier pattern let the
+    qualifier gap swallow the "not" and matched it anyway."""
+    assert stop(tmp_path, text) == (0, "")
+
+
+@pytest.mark.parametrize("text", [
+    "I do NOT confirm a computation bug. The arithmetic is correct.",
+    "I cannot confirm the reading. The evidence points the other way.",
+    "My evidence disagrees with the bug framing.",
+    "Contrary to your ruling, the value is arithmetically right.",
+])
+def test_disputing_a_ruling_fires(tmp_path, text):
+    """Whose call wins is a decision, and reporting the disagreement is not the
+    same as putting it to the person whose call it was."""
+    code, message = stop(tmp_path, text)
+    assert code == 2 and "disputes a ruling" in message
+
+
+def test_a_buried_decision_inside_a_dense_paragraph_is_caught(tmp_path):
+    """The case this was rebuilt for: no question mark anywhere, the dispute in
+    the middle, the outward action in the closing line."""
+    text = (
+        "Two answers here, one confirmed and one where the framing does not "
+        "survive contact with the numbers. First, the sub-score reads the "
+        "three-year terms only, and no one-year term exists anywhere in the "
+        "rules, so there is nothing to remove. Second, I do NOT confirm a "
+        "computation bug: the value is a simple excess return, and a fund "
+        "benchmarked to the index it tracks lands at roughly zero by "
+        "arithmetic. I will post both findings on the ticket. Status and "
+        "owner unchanged.")
+    assert "?" not in text
+    code, message = stop(tmp_path, text)
+    assert code == 2
+    # It does both, and the reader is told both.
+    assert "disputes a ruling" in message
+    assert "reaches outside this conversation" in message
+
+
+def test_density_alone_does_not_fire(tmp_path):
+    """A long hedged paragraph is not evidence that something is hidden in it,
+    and firing on length would fire on most technical writing."""
+    text = ("The classifier may be somewhat premature here, and it could "
+            "arguably be that the numbers shift again, though it seems "
+            "reasonably likely that the broad shape holds. Generally the "
+            "readings tend to move together, more or less, and the earlier "
+            "figures were possibly optimistic in a way that probably matters "
+            "rather less than it appears.")
+    assert stop(tmp_path, text) == (0, "")
+
+
+def test_a_message_doing_two_things_at_once_is_told_both(tmp_path):
+    """Naming one when two apply hands the reader a partial account of why
+    they are being stopped."""
+    text = "Should I proceed? I will push it either way."
+    _, message = stop(tmp_path, text)
+    assert message.startswith("This is asking for a decision.")
+    assert "reaches outside this conversation" in message
+
+
+# --- the handoff that carries no question mark ------------------------------
+
+@pytest.mark.parametrize("text", [
+    "That is a change to signup code, your call, not mine.",
+    "Up to you.",
+    "The numbers are in. Your decision.",
+    "That is not mine to call.",
+])
+def test_an_explicit_handoff_fires_without_a_question_mark(tmp_path, text):
+    """A specimen ending "your call, not mine" was missed entirely, because the
+    whole shape was gated on a question mark a plain handoff does not carry."""
+    assert "?" not in text
+    assert stop(tmp_path, text)[0] == 2
+
+
+def test_an_ask_at_the_end_of_a_long_message_is_named_as_buried(tmp_path):
+    """The case that prompted this: four hundred words of evidence, then one
+    closing clause handing over the decision."""
+    text = "Measured this turn, the pool holds the correct remote. " * 40 + \
+           "That is a change to signup code, your call, not mine."
+    _, message = stop(tmp_path, text)
+    assert "percent of the way in" in message
+    assert "nobody can" in message
+
+
+def test_a_short_message_is_never_called_buried(tmp_path):
+    """There is nowhere to hide in four lines, and calling it buried would be
+    a complaint about brevity."""
+    _, message = stop(tmp_path, "Ready to go. Your call.")
+    assert "percent of the way in" not in message
+
+
+def test_an_ask_at_the_top_of_a_long_message_is_not_buried(tmp_path):
+    """This is the shape being asked for, so it must not be flagged."""
+    text = "Your call: ship it or wait. " + \
+           "Measured this turn, the pool holds the correct remote. " * 40
+    _, message = stop(tmp_path, text)
+    assert "percent of the way in" not in message
+
+
+def test_a_long_message_with_no_ask_at_all_is_not_measured_for_burial():
+    """The outward-action and dispute shapes fire with no ask phrase anywhere,
+    so the position check has to cope with having nothing to locate."""
+    text = "I will push the branch once the suite is green. " * 40
+    assert dc.buried_position(text) is None
