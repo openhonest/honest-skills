@@ -74,6 +74,13 @@ TAIL_BYTES = 400_000
 #
 # So there are three, and each gets its own advice, because the fix differs.
 
+# Re-offering the menu: "Which do you want: A, B, C, or D?" after naming one.
+RE_OFFERS_THE_MENU = (
+    r"\bwhich (?:do you want|one|option)\b",
+    r"\b[A-D](?:\s*,\s*[A-D]){1,3}\s*,?\s*or\s+[A-D]\b",
+    r"\bpick one\b",
+)
+
 # 1a. An explicit handoff. These say "you decide" in so many words and need no
 # question mark to do it. A specimen ending "that is a change to signup code,
 # your call, not mine" was missed entirely because the whole shape was gated on
@@ -134,7 +141,10 @@ OFFERS_A_CHOICE = (
     r"\bproceed\?",
     r"\bwhich would you prefer\b",
     r"\bdo you approve\b",
-)
+) + RE_OFFERS_THE_MENU
+# Reciting the menu is an ask, and it was not recognised as one. "Which do you
+# want: A, B, C, or D?" declined as no-shape-matched, so the down-path it
+# exists to trigger was unreachable from the specimen that produced it.
 
 # A message this long has room to bury its ask. Below it, the last line is
 # still in view when the reader reaches the first.
@@ -233,24 +243,11 @@ def last_assistant_text(transcript: str) -> str:
 LINE = re.I | re.M
 
 
-# A phrase inside quotation marks is being named, not used. Code spans are the
-# same, and clarity.strip_furniture already removes those.
-QUOTED = re.compile(r"[\"\u201c][^\"\u201c\u201d\n]{1,60}[\"\u201d]")
-
-
 def usable(text: str) -> str:
     """The text with mentions removed, so a report about this hook does not
-    trip it.
-
-    It fired on a message whose only match was the phrase "your call" quoted as
-    an example of what it matches. commit_msg.py already made this argument and
-    acted on it: a checker that cannot tell a mention from a use makes its own
-    defects unreportable. This one was not doing it.
-
-    Stripping quotes can hide a genuine handoff someone wrote inside quotation
-    marks. That is a miss, which is the direction the errors are meant to fall.
-    """
-    return QUOTED.sub(" ", clarity.strip_furniture(text))
+    trip it. clarity.strip_mentions is the one implementation; this had a
+    private copy of the same regex until commit_msg needed it too."""
+    return clarity.strip_mentions(text)
 
 
 def offers_a_choice(text: str) -> bool:
@@ -346,6 +343,30 @@ def fired_before(session: str, text: str) -> bool:
     return False
 
 
+
+
+def already_answered(text: str) -> bool:
+    """True when the message names a recommendation and then re-offers the menu.
+
+    The ritual question, and it is decidable. The specimen wrote
+    "Recommendation. A. If I am wrong, the cost is..." and closed with "Which
+    do you want: A, B, C, or D?" It had the answer, wrote the answer, and
+    asked anyway, because something upstream said to check before acting.
+
+    NOT merely "has a recommendation". The first version tested that and fired
+    on every correct brief, because the format requires a recommendation and
+    a brief exists in order to ask. Handing the decision over after
+    recommending is the normal shape. Reciting the menu back after
+    recommending is the ritual: it asks the reader to redo the comparison the
+    writer has already done and published.
+    """
+    clean = usable(text)
+    bodies, _ = decision.split_sections(clean)
+    if not (bodies.get("recommendation") or "").strip():
+        return False
+    return any(re.search(p, clean, re.I) for p in RE_OFFERS_THE_MENU)
+
+
 def has_needs_you(text: str) -> bool:
     """Named rather than indexed. Reading HANDS_THE_DECISION_OVER[1] pointed
     at whatever sat second in the tuple, so reordering it silently repointed
@@ -353,7 +374,32 @@ def has_needs_you(text: str) -> bool:
     return bool(re.search(NEEDS_YOU, usable(text), LINE))
 
 
-# Three advices, because three different things are wrong.
+# The hook pushes in two directions rather than one.
+#
+# Everything used to go up: every ask got the five sections. That made the
+# ritual question worse, because a question nobody needed to answer arrived
+# dressed as a formal decision. The two populations want opposite treatment.
+#
+# DOWN: you already know the answer. Act, and report what you did.
+# UP: this is a real fork. Give the reader what they need to take it.
+ACT_ON_IT = """You already answered this. You named a recommendation and then
+asked anyway.
+
+Apply the really test. Look at the options you are offering and ask: is there
+any universe in which they pick B? Really? If there is not, B is scenery, and
+offering it spends the reader's attention on a course you had already rejected.
+
+So do not ask. Do the thing, and report what you did and why, with the evidence
+that made it obvious. If you are wrong they will say so, and that costs one
+turn. Asking costs one turn too, and buys nothing.
+
+Ask only when you would genuinely proceed differently depending on the answer,
+and the choice turns on something the reader knows and you do not, or a cost
+only they can accept."""
+
+
+# Three advices for the questions that survive that test, because three
+# different things are wrong with them.
 #
 # A long report whose ask sits at the end already contains everything the
 # reader needs. One line is in the wrong place. Telling its author that all
@@ -440,6 +486,8 @@ def advice_for(text: str, lead: str) -> str:
     Position and absence are different defects with different fixes, and an
     earlier version answered both with the same wall of five section names.
     """
+    if already_answered(text):
+        return ACT_ON_IT
     if has_needs_you(text):
         return BRIEF_THE_ASK
     where = buried_position(text)
@@ -453,12 +501,17 @@ def on_stop(payload: dict) -> tuple[int, str]:
     if not text:
         trace("Stop", "declined", "no assistant text to read")
         return 0, ""
-    if already_in_form(text):
-        trace("Stop", "declined", "already in the form")
-        return 0, ""
     lead = shape_of(text)
     if not lead:
         trace("Stop", "declined", "no shape matched")
+        return 0, ""
+    # The order matters, and getting it wrong let the worst case through. A
+    # message that answered itself and asked anyway is usually a COMPLETE
+    # brief, so testing "already in the form" first declined on exactly the
+    # thing the down-path exists for. Answered-and-asking is checked first;
+    # being well-formed is no defence against not needing to ask.
+    if not already_answered(text) and already_in_form(text):
+        trace("Stop", "declined", "already in the form")
         return 0, ""
     if fired_before(payload.get("session_id") or "", text):
         trace("Stop", "declined", "already sent back once")

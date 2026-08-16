@@ -159,6 +159,26 @@ def option_count(body: str) -> int:
                 if re.match(r"^\s*(?:[-*+]|\d+[.)])\s+\S", l)])
 
 
+# An option that says in its own cell that it buys nothing. A real brief
+# carried "D. Leave it | nothing today | nothing" on 2026-08-16, alongside a
+# recommendation naming a different option. Its author had already rejected it
+# and offered it anyway, to have something to count.
+BUYS_NOTHING = re.compile(
+    r"[|│]\s*(?:nothing|none|n/?a|-{1,2})\s*[|│]?\s*$", re.I | re.M)
+
+
+def scenery_options(body: str) -> int:
+    """Options that admit they buy nothing.
+
+    The really test, made mechanical for the one case a machine can see. Is
+    there any universe in which the reader picks the row whose own cell says
+    it buys nothing? Offering it spends their attention on a course already
+    rejected, and it inflates the option count so the brief looks like a
+    choice.
+    """
+    return len(BUYS_NOTHING.findall(body))
+
+
 def analyse_brief(raw: str, source: str) -> dict:
     """`source` has no default: see the note in clarity.analyse. A default
     would make a brief read from stdin indistinguishable from one whose caller
@@ -212,6 +232,14 @@ def analyse_brief(raw: str, source: str) -> dict:
         "words": rec, "limit": 60,
         "reason": "a recommendation that needs a page is two recommendations "
                   "or none",
+    }
+
+    scenery = scenery_options(bodies.get("options", ""))
+    checks["no_scenery_options"] = {
+        "verdict": "fail" if scenery else "pass", "gating": True,
+        "count": scenery,
+        "reason": "an option whose own cell says it buys nothing was rejected "
+                  "before it was written, and it is there to make the count",
     }
 
     opts = option_count(bodies.get("options", ""))
@@ -293,6 +321,9 @@ def render(r: dict) -> str:
     if c["recommendation_is_short"]["verdict"] == "fail":
         out.append(f"  recommendation runs {c['recommendation_is_short']['words']} "
                    f"words, limit 60")
+    if c["no_scenery_options"]["verdict"] == "fail":
+        out.append(f"  {c['no_scenery_options']['count']} option(s) say they buy "
+                   f"nothing. Any universe where they pick that one? Really?")
     if c["offers_a_choice"]["verdict"] == "fail":
         out.append(f"  {c['offers_a_choice']['count']} option(s). One option is "
                    f"a notification, not a decision")

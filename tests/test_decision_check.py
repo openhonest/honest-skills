@@ -643,7 +643,8 @@ def test_a_firing_turn_records_why_it_fired(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("text,why", [
     ("Background. A.\n\nCurrent situation. B.\n\nOptions.\n\n- a\n- b\n\n"
-     "Recommendation: a.\n\nCost of no action. 3 days.", "already in the form"),
+     "Recommendation: a.\n\nCost of no action. 3 days.\n\nYour call.",
+     "already in the form"),
     ("The tests pass.", "no shape matched"),
 ])
 def test_each_decline_says_which_one_it_was(tmp_path, monkeypatch, text, why):
@@ -808,3 +809,37 @@ def test_the_exit_names_the_test_for_a_real_fork(tmp_path):
     _, message = stop(tmp_path, "Should I ship it?")
     assert "proceed the same way whatever the answer" in message
     assert "you would actually\ntake" in message or "you would actually take" in message
+
+
+# --- the binomial split: down into action, or up to the standard ------------
+
+def test_a_message_that_already_answered_is_pushed_down_into_action(tmp_path):
+    """The specimen wrote "Recommendation. A." and then asked "Which do you
+    want: A, B, C, or D?" It had the answer, wrote the answer, and asked
+    anyway, because something upstream said to check before acting."""
+    text = ("Background. A thing.\n\nCurrent situation. It forces a choice.\n\n"
+            "Options.\n\n- A, a day\n- B, an hour\n\n"
+            "Recommendation. A. If I am wrong the cost is small.\n\n"
+            "Cost of no action. 3 days lost.\n\n"
+            "Which do you want: A, B, C, or D?")
+    _, message = stop(tmp_path, text)
+    assert message.startswith("You already answered this")
+    assert "Really?" in message
+    assert "Missing here" not in message
+
+
+def test_a_message_with_no_recommendation_is_pushed_up_to_the_standard(tmp_path):
+    """The other half of the split. A bare ask still gets the shape."""
+    _, message = stop(tmp_path, "Should I ship it?")
+    assert not message.startswith("You already answered this")
+    assert "Missing here" in message
+
+
+def test_the_down_advice_names_the_cost_of_asking(tmp_path):
+    """"Asking costs one turn too, and buys nothing" is the whole argument."""
+    text = ("Recommendation. Ship it.\n\nBackground. A.\n\n"
+            "Current situation. B.\n\nOptions.\n\n- a\n- b\n\n"
+            "Cost of no action. 3 days.\n\nWhich do you want?")
+    _, message = stop(tmp_path, text)
+    assert "buys nothing" in message
+    assert "would genuinely proceed differently" in message

@@ -229,3 +229,19 @@ def test_a_code_span_is_a_mention_not_a_use(tmp_path):
 
 def test_the_same_defect_outside_a_code_span_still_fails(tmp_path):
     assert run("Set badly-damaged solid, per AP\n", tmp_path)[0] == 1
+
+
+def test_a_quoted_mention_is_not_a_use():
+    """A commit describing the "really" test was blocked for the word really.
+    The rule was already written for code spans and simply not applied to
+    quotes."""
+    msg = ('Apply the "really" test\n\n'
+           'It asks whether there is any universe in which they pick B.')
+    assert commit_msg.analyse_message(msg, "t")["verdict"] == "pass"
+
+
+def test_the_same_word_unquoted_still_fails():
+    """Stripping mentions must not strip uses."""
+    msg = "Fix the thing\n\nThis is a really significant change."
+    r = commit_msg.analyse_message(msg, "t")
+    assert "intensifiers" in r["gating_failures"]

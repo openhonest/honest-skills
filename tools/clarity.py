@@ -130,6 +130,21 @@ def syllables(word: str) -> int:
     return max(count, 1)
 
 
+# A phrase inside quotation marks is being named, not used. Code spans are the
+# same and strip_furniture already removes those.
+#
+# Kept separate from strip_furniture because the clarity index should still
+# score quoted prose: a long quotation is text the reader has to read. This is
+# for the word-level gates, where a checker that cannot tell a mention from a
+# use makes its own defects unreportable.
+QUOTED = re.compile(r"[\"\u201c][^\"\u201c\u201d\n]{1,60}[\"\u201d]")
+
+
+def strip_mentions(text: str) -> str:
+    """Furniture removed, plus short quoted phrases."""
+    return QUOTED.sub(" ", strip_furniture(text))
+
+
 def strip_furniture(text: str) -> str:
     """Drop what the index should not judge.
 

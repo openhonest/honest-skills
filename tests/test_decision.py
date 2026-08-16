@@ -339,3 +339,33 @@ def test_the_report_names_the_order_it_actually_found():
             "Cost of no action. 3 days lost.\n")
     out = decision.render(decision.analyse_brief(text, "t"))
     assert "out of order: background then options then situation" in out
+
+
+def test_an_option_that_buys_nothing_fails():
+    """The really test, made mechanical for the one case a machine can see.
+    A real brief carried "D. Leave it | nothing today | nothing" alongside a
+    recommendation naming a different option."""
+    text = GOOD.replace("| Skip with a reason | An hour | A standing reminder |",
+                        "| Skip with a reason | An hour | A standing reminder |\n"
+                        "| Leave it | nothing today | nothing |")
+    r = decision.analyse_brief(text, "t")
+    assert "no_scenery_options" in r["gating_failures"]
+    assert r["checks"]["no_scenery_options"]["count"] == 1
+    assert "Really?" in decision.render(r)
+
+
+@pytest.mark.parametrize("buys", ["none", "n/a", "-", "--"])
+def test_the_other_ways_of_writing_nothing_also_fail(buys):
+    text = GOOD.replace("| Skip with a reason | An hour | A standing reminder |",
+                        f"| Skip with a reason | An hour | A standing reminder |\n"
+                        f"| Leave it | nothing | {buys} |")
+    assert "no_scenery_options" in decision.analyse_brief(text, "t")["gating_failures"]
+
+
+def test_an_option_that_buys_something_passes():
+    """Doing nothing is a legitimate option when it buys something real, and
+    the check must not fire on the word nothing appearing elsewhere."""
+    text = GOOD.replace("| Skip with a reason | An hour | A standing reminder |",
+                        "| Skip with a reason | An hour | A standing reminder |\n"
+                        "| Wait a week | nothing today | the classifier lands first |")
+    assert "no_scenery_options" not in decision.analyse_brief(text, "t")["gating_failures"]
