@@ -118,7 +118,7 @@ def test_a_truncated_line_from_seeking_is_skipped(tmp_path):
 def test_a_question_offering_a_choice_fires(tmp_path, text):
     code, message = stop(tmp_path, text)
     assert code == 2
-    assert "five sections" in message
+    assert "hold in their head" in message
 
 
 def test_the_message_names_what_is_missing(tmp_path):
@@ -244,7 +244,7 @@ def test_main_writes_the_advice_to_stderr_and_exits_2(tmp_path, monkeypatch):
         "transcript_path": transcript(tmp_path, "Should I ship it?"),
         "session_id": str(uuid.uuid4())})
     code, err = run(payload, monkeypatch)
-    assert code == 2 and "five sections" in err
+    assert code == 2 and "hold in their head" in err
 
 
 def test_it_runs_as_a_subprocess_and_is_silent_on_an_ordinary_turn(tmp_path):
