@@ -877,3 +877,45 @@ def test_the_effort_words_are_read_as_prose_not_as_mentions(tmp_path):
             '"slower per scenario" from the draft.')
     _, message = stop(tmp_path, text)
     assert "effort is not a cost to the reader" not in message
+
+
+# --- asking permission to continue ------------------------------------------
+
+@pytest.mark.parametrize("text", [
+    "Two swallows left. Want me to keep going on it?",
+    "Shall I continue with the rest?",
+    "That group is done. Keep going?",
+    "Should I carry on with the others?",
+    "Do you want me to go on?",
+])
+def test_asking_permission_to_continue_is_told_to_carry_on(tmp_path, text):
+    """The ritual in its purest form: the answer was given before the question
+    was asked, usually more than once. A session asked "want me to keep going
+    on it?" then said it itself: "You said keep going twice. Asking again was
+    the ritual." """
+    _, message = stop(tmp_path, text)
+    assert message.startswith("You are asking permission to continue")
+    assert "Missing here" not in message
+
+
+@pytest.mark.parametrize("text", [
+    "Ready to push to the public remote. Ok to proceed?",
+    "- Needs you: the ROR login, which I do not have.",
+])
+def test_a_real_ask_is_not_treated_as_a_continuation(tmp_path, text):
+    """Permission to reach outside is a genuine fork. Telling someone to carry
+    on there would be telling them to act without consent."""
+    _, message = stop(tmp_path, text)
+    assert not message.startswith("You are asking permission to continue")
+
+
+def test_a_plain_report_still_says_nothing(tmp_path):
+    assert stop(tmp_path, "Fixed a real bug. 1,023 tests passing.") == (0, "")
+
+
+def test_the_carry_on_advice_says_when_stopping_is_right(tmp_path):
+    """An advice that only says "do not stop" would be wrong the one time
+    stopping matters."""
+    _, message = stop(tmp_path, "Want me to keep going?")
+    assert "genuinely needs them" in message
+    assert "you will not be able to proceed" in message

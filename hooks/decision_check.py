@@ -83,6 +83,23 @@ RE_OFFERS_THE_MENU = (
     r"\bpick one\b",
 )
 
+# Asking permission to continue work already authorised. This is the ritual in
+# its purest form: the answer was given before the question was asked, and
+# usually more than once. A live session asked "want me to keep going on it?"
+# and then said it itself: "You said keep going twice. Asking again was the
+# ritual."
+#
+# Continuing is not a fork. If the work was authorised, doing it is the work,
+# and stopping to ask converts one turn of progress into two turns of nothing.
+ASKS_TO_CONTINUE = (
+    r"\b(?:want|do you want) me to (?:keep|carry on|continue|go on)\b",
+    r"\bshall I (?:keep|carry on|continue|go on)\b",
+    r"\bshould I (?:keep|carry on|continue|go on)\b",
+    r"\b(?:keep|carry on) going\?",
+    r"\bcontinue\?",
+    r"\bshall I proceed with the (?:rest|remainder|others)\b",
+)
+
 # 1a. An explicit handoff. These say "you decide" in so many words and need no
 # question mark to do it. A specimen ending "that is a change to signup code,
 # your call, not mine" was missed entirely because the whole shape was gated on
@@ -143,7 +160,7 @@ OFFERS_A_CHOICE = (
     r"\bproceed\?",
     r"\bwhich would you prefer\b",
     r"\bdo you approve\b",
-) + RE_OFFERS_THE_MENU
+) + RE_OFFERS_THE_MENU + ASKS_TO_CONTINUE
 # Reciting the menu is an ask, and it was not recognised as one. "Which do you
 # want: A, B, C, or D?" declined as no-shape-matched, so the down-path it
 # exists to trigger was unreachable from the specimen that produced it.
@@ -368,6 +385,22 @@ each." Its own report had named the answer two paragraphs earlier.
 """
 
 
+CARRY_ON = """You are asking permission to continue work you were already told
+to do. Continuing is not a fork: doing it is the work, and stopping to ask
+turns one turn of progress into two turns of nothing.
+
+A session asked "want me to keep going on it?" and then said it itself: "You
+said keep going twice. Asking again was the ritual."
+
+Carry on. Report what changed when you are done, not what you are about to
+start. If you hit something that genuinely needs them, that is the moment to
+stop, and it will be obvious because you will not be able to proceed."""
+
+
+def asks_to_continue(text: str) -> bool:
+    return any(re.search(p, usable(text), re.I) for p in ASKS_TO_CONTINUE)
+
+
 def prices_its_own_effort(text: str) -> bool:
     return any(re.search(p, usable(text), re.I) for p in PRICES_ITS_OWN_EFFORT)
 
@@ -491,6 +524,8 @@ def advice_for(text: str, lead: str) -> str:
     Position and absence are different defects with different fixes, and an
     earlier version answered both with the same wall of five section names.
     """
+    if asks_to_continue(text):
+        return CARRY_ON
     if already_answered(text):
         return ACT_ON_IT
     if has_needs_you(text):
