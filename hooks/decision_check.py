@@ -341,6 +341,20 @@ def fired_before(session: str, text: str) -> bool:
 
 
 
+# A recommendation stated in prose rather than under a heading. The section
+# test alone missed "Which do you want me to act on? Item 2 is the one I would
+# fix first", which names the answer and then asks anyway. Most real messages
+# recommend in a sentence; only a formal brief uses a labelled section.
+RECOMMENDS_IN_PROSE = (
+    r"\bI would (?:fix|start|do|pick|choose|take|go with|say)\b",
+    r"\bthe one I would\b",
+    r"\bI'?d (?:fix|start|pick|choose|go with)\b",
+    r"\bmy recommendation\b",
+    r"\bI recommend\b",
+    r"\bif it were me\b",
+)
+
+
 def already_answered(text: str) -> bool:
     """True when the message names a recommendation and then re-offers the menu.
 
@@ -358,7 +372,9 @@ def already_answered(text: str) -> bool:
     """
     clean = usable(text)
     bodies, _ = decision.split_sections(clean)
-    if not (bodies.get("recommendation") or "").strip():
+    named = bool((bodies.get("recommendation") or "").strip()) or any(
+        re.search(p, clean, re.I) for p in RECOMMENDS_IN_PROSE)
+    if not named:
         return False
     return any(re.search(p, clean, re.I) for p in RE_OFFERS_THE_MENU)
 

@@ -919,3 +919,43 @@ def test_the_carry_on_advice_says_when_stopping_is_right(tmp_path):
     _, message = stop(tmp_path, "Want me to keep going?")
     assert "genuinely needs them" in message
     assert "you will not be able to proceed" in message
+
+
+# --- a recommendation stated in prose, not under a heading -------------------
+
+def test_a_prose_recommendation_with_a_menu_is_pushed_down(tmp_path):
+    """The section test alone missed this. Most real messages recommend in a
+    sentence; only a formal brief uses a labelled section."""
+    text = ("Which do you want me to act on? Item 2 is the one I would fix "
+            "first: it is a factual contradiction in shipped text, and the "
+            "correction makes the credential stronger.")
+    _, message = stop(tmp_path, text)
+    assert message.startswith("You already answered this")
+
+
+@pytest.mark.parametrize("phrase", [
+    "My recommendation is A.", "I recommend A.", "I would go with A.",
+    "I'd pick A.", "If it were me, A.", "A is the one I would take.",
+])
+def test_every_way_of_recommending_in_prose_counts(tmp_path, phrase):
+    _, message = stop(tmp_path, f"{phrase} Which do you want?")
+    assert message.startswith("You already answered this")
+
+
+def test_a_menu_with_no_recommendation_still_gets_the_shape(tmp_path):
+    """Nothing has been answered, so there is nothing to push down."""
+    _, message = stop(tmp_path, "Which do you want: A, B, or C?")
+    assert "Missing here" in message
+
+
+def test_a_recommendation_with_no_menu_gets_the_shape_not_the_push(tmp_path):
+    """Handing over after recommending is the normal shape, not the ritual.
+    What is missing is what the reader needs to weigh it against."""
+    _, message = stop(tmp_path, "I would fix item 2 first. Your call.")
+    assert not message.startswith("You already answered this")
+    assert "Missing here" in message
+
+
+def test_prose_that_merely_mentions_a_preference_is_silent(tmp_path):
+    """No ask at all, so nothing fires however it is phrased."""
+    assert stop(tmp_path, "I would not touch item 3. It needs a lawyer.") == (0, "")
