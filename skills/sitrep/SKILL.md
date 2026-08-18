@@ -124,6 +124,35 @@ the answer two paragraphs earlier.
 settles it, you have answered it, and asking anyway spends their attention on a
 conclusion you already reached.
 
+## When nothing changed, the receipt is not a message
+
+A turn that holds, waits, or acknowledges has no finding in it. It still has to
+end in text, so it ends in a paragraph describing a state the reader already
+knows, and they read the whole thing to discover that nothing happened.
+
+Put that in a tool call instead:
+
+    echo "holding prod, nothing dispatched, waiting on your go"
+
+The message then carries only what changed, which on such a turn is nothing, so
+it can be one line or none at all.
+
+**Why a tool call.** Assistant prose and tool output are different channels in
+the client. Tool output folds; prose does not, and no hook can move text between
+them. Running a command to get its rendering is slightly perverse, and it is the
+only lever that exists.
+
+**What this buys, precisely.** Folding is the smaller half, because a one-line
+receipt is one line wherever it sits. The gain is that the message stops
+carrying state. Someone scanning replies sees findings in the prose and nothing
+else, so a turn with no finding costs them a glance rather than a paragraph.
+
+**What it must not become.** A receipt replaces the paragraph and never
+accompanies one. Writing the state in the message and echoing it as well doubles
+the reading and adds a command. A turn that did change something reports that
+change in the message as normal. This is only for the turn where the honest
+answer is that nothing moved.
+
 ## Screenshots
 
 A screenshot means "look at this and tell me what to do," not "describe this
