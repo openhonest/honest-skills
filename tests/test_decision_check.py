@@ -1021,3 +1021,38 @@ def test_a_ritual_message_cannot_hide_behind_the_exemption(tmp_path):
             "hour of work rather than a day of it, which matters here.")
     _, message = stop(tmp_path, text)
     assert message.startswith("You already answered this")
+
+
+# --- a description of two things differing is not a dispute -----------------
+
+@pytest.mark.parametrize("text", [
+    "The dispute detector is aimed at disputes with the reader, not at a "
+    "finding that code disagrees with a spec.",
+    "SQLite disagrees with PostgreSQL on how it reads that wildcard.",
+    "The docstring disagrees with the SQL underneath it.",
+])
+def test_the_ordinary_verb_is_not_a_dispute(tmp_path, text):
+    """"disagrees with" on its own matched a sentence about code and a spec,
+    which disputes nobody. It fired on a report that asked for nothing."""
+    assert not dc.contradicts_a_ruling(text)
+    assert stop(tmp_path, text) == (0, "")
+
+
+@pytest.mark.parametrize("text", [
+    "My evidence disagrees with the bug framing.",
+    "I disagree with your ruling on this.",
+    "That disagrees with your definition of the metric.",
+    "I do NOT confirm a computation bug.",
+    "Contrary to your instruction, the value is arithmetically right.",
+])
+def test_a_real_dispute_still_fires(tmp_path, text):
+    """Narrowing must not lose the case. Whose call wins is a decision."""
+    assert dc.contradicts_a_ruling(text)
+
+
+def test_the_narrowing_needs_a_subject_or_an_object():
+    """Either a first-person subject, or a ruling as the object. The bare verb
+    is neither and is why this fired on ordinary prose."""
+    assert not dc.contradicts_a_ruling("A disagrees with B.")
+    assert dc.contradicts_a_ruling("I disagree with A.")
+    assert dc.contradicts_a_ruling("A disagrees with your call.")

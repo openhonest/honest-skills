@@ -198,7 +198,15 @@ ANNOUNCES_OUTWARD_ACTION = (
 CONTRADICTS_A_RULING = (
     r"\bI do(?: not|n't) confirm\b",
     r"\bI cannot confirm\b",
-    r"\bdisagrees? with\b",
+    # "disagrees with" on its own is the ordinary English verb and matched
+    # "a finding that code disagrees with a spec", which disputes nobody. It
+    # needs a first-person subject or a ruling as its object to be a dispute
+    # with the reader rather than a description of two things differing.
+    r"\bI disagree with\b",
+    r"\bmy (?:\w+ ){0,2}(?:evidence|reading|measurement|finding)s? "
+    r"disagrees? with\b",
+    r"\bdisagrees? with (?:your|his|her|their|the) "
+    r"(?:ruling|call|instruction|framing|premise|definition|conclusion)\b",
     r"\bthe .{0,30}premise (?:does not|doesn't) hold\b",
     r"\bcontrary to (?:the|your|his|her|their)\b",
     r"\bthat framing is wrong\b",
