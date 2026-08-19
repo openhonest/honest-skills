@@ -172,6 +172,15 @@ LONG_ENOUGH_TO_BURY = 150     # words
 # An ask past this point in a long message is one the reader had to read to.
 BURIED_AFTER = 0.75
 
+# An ask this early has already been packaged: the reader meets it before the
+# evidence, which is the whole of what the format is for.
+UP_FRONT_BEFORE = 0.15
+
+# ...but only if there is something under it. A bare question put first is
+# still a bare question, and that is the case the shape exists for. The floor
+# was missing at first, and "Should I ship it?" qualified as well packaged.
+ENOUGH_UNDER_THE_ASK = 40    # words
+
 # 2. An action that reaches outside, announced rather than offered. Posting a
 # comment, sending mail, pushing, merging: the reader finds out afterwards that
 # a decision was taken. The negative lookahead is not decoration. Without it
@@ -252,6 +261,29 @@ def offers_a_choice(text: str) -> bool:
     if "?" not in text:
         return False
     return any(re.search(p, text, re.I) for p in OFFERS_A_CHOICE)
+
+
+def ask_is_up_front(text: str) -> bool:
+    """True when the ask arrives before the reasoning.
+
+    This exists because complying with the advice earned a fresh complaint. A
+    session was told to move its ask to the top and that this "is the whole
+    fix". It moved the ask to the top, and the next firing demanded five
+    labelled sections it had not asked for the turn before. Doing the right
+    thing produced a different rejection, which is the same failure as the
+    AskUserQuestion block.
+
+    An ask in the opening sentence, in a short message, is already packaged.
+    Demanding headings from it reads labels instead of substance, and the
+    substance is there: the reader meets the question before the evidence.
+    """
+    clean = usable(text)
+    words = len(clean.split())
+    if not clean or words > LONG_ENOUGH_TO_BURY or words < ENOUGH_UNDER_THE_ASK:
+        return False
+    spots = [m.start() for p in HANDS_THE_DECISION_OVER + OFFERS_A_CHOICE
+             for m in re.finditer(p, clean, LINE)]
+    return bool(spots) and min(spots) / len(clean) <= UP_FRONT_BEFORE
 
 
 def buried_position(text: str) -> float | None:
@@ -502,7 +534,10 @@ The ask sits {where:.0f} percent of the way in. To answer it the reader has to
 hold everything above it in their head, and nobody can.
 
 Everything needed to answer is already here. Move the ask to the top, ahead of
-the evidence, and leave the rest where it is. That is the whole fix."""
+the evidence, and leave the rest where it is.
+
+Moving it is enough. Nothing here asks for headings, and a short message whose
+ask comes first will not be sent back again."""
 
 ADVICE = """{lead}
 
@@ -569,6 +604,12 @@ def on_stop(payload: dict) -> tuple[int, str]:
     # being well-formed is no defence against not needing to ask.
     if not already_answered(text) and already_in_form(text):
         trace("Stop", "declined", "already in the form")
+        return 0, ""
+    if not already_answered(text) and ask_is_up_front(text):
+        # Short, and the ask arrives before the reasoning. That is the
+        # packaging rule already satisfied, and there is nothing left to say
+        # that would not be a demand for headings.
+        trace("Stop", "declined", "ask is already up front")
         return 0, ""
     if fired_before(payload.get("session_id") or "", text):
         trace("Stop", "declined", "already sent back once")

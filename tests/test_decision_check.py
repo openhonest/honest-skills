@@ -959,3 +959,65 @@ def test_a_recommendation_with_no_menu_gets_the_shape_not_the_push(tmp_path):
 def test_prose_that_merely_mentions_a_preference_is_silent(tmp_path):
     """No ask at all, so nothing fires however it is phrased."""
     assert stop(tmp_path, "I would not touch item 3. It needs a lawyer.") == (0, "")
+
+
+# --- complying must not earn a fresh complaint ------------------------------
+
+COMPLIED = (
+    "One decision, up front: should I fix the code now, or leave it "
+    "catalogued and move on?\n\n"
+    "I'd do it only on your say-so, because it changes three production reads "
+    "and you have been in cataloging mode, not code mode. The fix itself is "
+    "small and low-risk: read the score change from full_data, exactly as the "
+    "PDF already does, with a test that the field shows the score change. No "
+    "pipeline work, since the data is already synced.\n\n"
+    "Say fix it and I branch; say next and I take the following row.")
+
+
+def test_a_message_that_moved_its_ask_to_the_top_is_left_alone(tmp_path):
+    """A session was told to move its ask to the top and that this was the
+    whole fix. It moved the ask to the top, and the next firing demanded five
+    labelled sections it had not asked for the turn before. Doing the right
+    thing produced a different rejection."""
+    assert stop(tmp_path, COMPLIED) == (0, "")
+
+
+def test_the_move_it_advice_no_longer_promises_more_than_it_delivers(tmp_path):
+    """It said "That is the whole fix" and then the next turn asked for
+    headings. Either the promise or the follow-up had to go."""
+    text = "Evidence here. " * 160 + "That is your call."
+    _, message = stop(tmp_path, text)
+    assert "Moving it is enough" in message
+    assert "will not be sent back again" in message
+
+
+def test_a_bare_ask_put_first_is_still_a_bare_ask(tmp_path):
+    """The floor was missing at first, and "Should I ship it?" qualified as
+    well packaged. Putting a question first does not give it substance."""
+    assert not dc.ask_is_up_front("Should I ship it?")
+    assert stop(tmp_path, "Should I ship it?")[0] == 2
+
+
+def test_a_long_report_cannot_claim_the_up_front_exemption(tmp_path):
+    """Past the burial threshold the question is where the ask sits, and a
+    long message is exactly what that measures."""
+    assert not dc.ask_is_up_front("Should I fix it? " + "Evidence. " * 200)
+
+
+def test_the_exemption_needs_the_ask_near_the_start(tmp_path):
+    """Substance alone is not packaging. The reader has to meet the ask
+    before the evidence, not after it."""
+    late = ("Here is a long stretch of reasoning that runs on for a while and "
+            "covers the measurement, the trace, and what it implies for the "
+            "next step in some detail. " * 2) + "Should I proceed?"
+    assert not dc.ask_is_up_front(late)
+
+
+def test_a_ritual_message_cannot_hide_behind_the_exemption(tmp_path):
+    """already_answered is checked first, so putting a menu re-offer at the
+    top buys nothing."""
+    text = ("Which do you want: A, B, or C? My recommendation is A, because "
+            "it is the only one that keeps the tree green and it costs an "
+            "hour of work rather than a day of it, which matters here.")
+    _, message = stop(tmp_path, text)
+    assert message.startswith("You already answered this")
