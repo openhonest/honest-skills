@@ -84,7 +84,11 @@ def test_furniture_is_excluded_from_the_score(tmp_path):
     with_code = prose + "\n\n```\n" + "\n".join(f"antidisestablishmentarianism_{i}()" for i in range(20)) + "\n```\n"
     _, plain = run(prose, tmp_path)
     _, fenced = run(with_code, tmp_path / "sub" if (tmp_path / "sub").mkdir() or True else tmp_path)
-    index_of = lambda s: float(s.splitlines()[0].split()[2])
+    # Read the labelled line rather than a fixed position. This parsed
+    # line 0 and broke when the not-measured block was prepended.
+    def index_of(s):
+        line = next(l for l in s.splitlines() if l.startswith("clarity index"))
+        return float(line.split()[2])
     assert index_of(plain) == index_of(fenced)
 
 
@@ -247,7 +251,10 @@ def test_headings_do_not_count_as_sentences(tmp_path):
     bare.write_text(prose)
     headed = tmp_path / "b.md"
     headed.write_text("## One\n\n" + prose + "\n\n## Two\n\n## Three\n")
-    index = lambda f: float(run(f.read_text(), tmp_path)[1].splitlines()[0].split()[2])
+    def index(f):
+        out = run(f.read_text(), tmp_path)[1]
+        line = next(l for l in out.splitlines() if l.startswith("clarity index"))
+        return float(line.split()[2])
     assert index(bare) == index(headed)
 
 
@@ -722,3 +729,34 @@ def test_a_coinage_inside_a_code_span_is_a_mention():
     """Writing about the rule has to be possible."""
     assert "coinage" not in clarity.analyse(
         'The checker matches `what I call`.', "-")["gating_failures"]
+
+
+# --- the index is not a verdict on the writing ------------------------------
+
+def test_every_report_opens_on_what_it_cannot_measure():
+    """A session ran this on nearly every message, read "in band" as a pass,
+    and shipped the writing its reader was rejecting. The index measures
+    sentence length and syllables. It cannot see a buried lead, three findings
+    where one mattered, or a correction that changes nothing for the reader,
+    and those were the actual defects."""
+    out = clarity.render_text(clarity.analyse(IN_BAND, "-"))
+    assert out.startswith("NOT MEASURED")
+    assert out.index("NOT MEASURED") < out.index("clarity index")
+
+
+def test_it_says_in_band_is_not_a_pass():
+    out = clarity.render_text(clarity.analyse(IN_BAND, "-"))
+    assert "not a verdict on the writing" in out
+
+
+def test_the_three_it_cannot_see_are_named():
+    out = clarity.render_text(clarity.analyse(IN_BAND, "-"))
+    for question in ("first sentence carry", "showing your work", "Cut what does not"):
+        assert question in out, question
+
+
+def test_a_failing_draft_carries_it_too():
+    """It appears whether the draft passes or fails, because a failing report
+    is read for what to fix and would otherwise imply the list is complete."""
+    out = clarity.render_text(clarity.analyse("Clearly a very significant change.", "-"))
+    assert out.startswith("NOT MEASURED")

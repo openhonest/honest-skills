@@ -10,11 +10,9 @@ The `--python` flag is required and the reason is not obvious. Without it, uv pi
 
 Do not symlink the project's own console script onto PATH. It works, and it ties the installed tool to whatever branch that source tree happens to be on.
 
-## Check the branch before anything else
+## What the hook cannot tell you
 
-L1.21 lives on `restructure/spec-research-tools-split`, not main. A binary built from main has no `--honest-code` flag.
-
-From inside the hook that is invisible. A missing binary and a rejected flag both arrive as `NOT_RUN`, with nothing to separate them. That exact ambiguity hid a real defect for a week: L1.18 was being called with a file path it always refused, while the binary was also absent, and the two failures read identically.
+A missing binary and a binary that rejects the flag both arrive as `NOT_RUN`, with nothing to separate them. That ambiguity hid a real defect for a week: L1.18 was being called with a file path it always refused, while the binary was also absent, and the two failures read identically. If the hook reports `NOT_RUN` and the binary is on your PATH, check what that binary actually supports.
 
 `--honest-code` and `--facets` take one file. Every other command takes a directory, and passing a file to the panel is refused outright.
 

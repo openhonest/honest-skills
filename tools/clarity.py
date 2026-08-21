@@ -309,13 +309,30 @@ def analyse(raw: str, source: str) -> dict:
     }
 
 
+# Printed above every report, passing or failing. The three things this cannot
+# measure are the three that decide whether a report is any good.
+NOT_ASSESSED = """NOT MEASURED, and these decide whether it is worth sending:
+  Does the first sentence carry what they must act on?
+  Is every finding here one they need, or are you showing your work?
+  Does anything here change what they do? Cut what does not.
+In band is arithmetic on sentence length. It is not a verdict on the writing.
+"""
+
+
 def render_text(r: dict) -> str:
     if r["verdict"] == "nothing_to_measure":
         return "nothing to measure"
     said = {"too_abrupt": "TOO ABRUPT, you have cut meaning out",
             "too_hard": "TOO HARD to read in one pass",
             "in_band": "in band"}[r["verdict"]]
-    out = [f"clarity index  {r['index']['value']:5.1f}   "
+    # The index is not a verdict on the writing and must not head the report
+    # like one. A session ran this on nearly every message, read "in band" as
+    # a pass, and shipped the writing its reader was rejecting. The index
+    # measures sentence length and syllable counts. It cannot see a buried
+    # lead, three findings where one mattered, or a correction that changes
+    # nothing for the reader, and those were the actual defects.
+    out = [NOT_ASSESSED,
+           f"clarity index  {r['index']['value']:5.1f}   "
            f"aim {AIM}, band {BAND[0]}-{BAND[1]}   {said}",
            f"  sentences    {r['counts']['sentences']:5}",
            f"  avg sentence {r['measures']['avg_sentence_words']:5.1f} words     target 15",
