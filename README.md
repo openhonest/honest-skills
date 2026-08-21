@@ -161,7 +161,9 @@ A hook fires whether or not the agent cooperates. That is the whole point: it tu
 
 Two checks run with no dependency at all: whether the file has passed a thousand lines, and trailing-whitespace density against the Slop Audit's published band. Both are exact and neither has a rival implementation to disagree with.
 
-For the mutable-state ratio it shells out to `slop-audit-l1` if that is installed. **It does not implement the ratio itself.** The authoritative definition lives in the Honest Framework with its bound-literal amendment, and a second implementation under the same name is how two tools come to disagree while both claim the standard. There is a test that fails if anyone adds `import ast` to the hook.
+The third is L1.21, the Honest Code clauses, and it shells out to `slop-audit-l1` when that is installed. **It does not implement the clauses itself.** A second implementation under the same name is how two tools come to disagree while both claim the standard, and a test fails if anyone adds `import ast` to the hook. See `docs/installing-the-analyzer.md`, including the branch L1.21 currently lives on.
+
+L1.18 used to be here and could never have worked. It takes a repository root and refuses a single file, so the hook had been passing it one file since it shipped and the call always failed. Nobody noticed for a week, because the analyzer was also absent from the machine and a missing binary produces the identical `NOT_RUN`. Installing it is what separated the two. `docs/l1-18-in-the-hook.md` records how the earlier measurement misled me.
 
 ### An absence is not a finding about your file
 
@@ -170,12 +172,15 @@ The first version announced the missing analyzer as a finding, so a clean file p
 The rule that replaced it: an absence is worth saying only alongside a presence. So a report leads with its coverage,
 
 ```
-honest-code: 2 of 3 checks ran on big.py
-  OUT_OF_SPEC  L1.17  1001 lines, over the 1000-line threshold
-      split it, or accept it deliberately
-  NOT_RUN      L1.18  slop-audit-l1 is not on PATH
-      this file was not checked for mutable-state ratio
+honest-code: 3 of 3 checks ran on dirty.py
+  OUT_OF_SPEC  L1.21  2 Honest Code finding(s), 14 of 19 clauses decided;
+      L1.21.8 line 14: catches Exception and reports success for work that failed;
+      L1.21.14 line 5: `timeout=30` absorbs the caller's omission
+      let it raise and map the type to a response at the boundary
+      note: these bands are expert judgment, not measured
 ```
+
+Nineteen clauses exist and fewer are decided on any given file, so the count is read from the analyzer rather than assumed. A production Python file decides 14; a test file decides 15, because the clause counting mocks starts applying.
 
 and when nothing surfaced there is no list to be incomplete about, so the hook says nothing at all.
 
