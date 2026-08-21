@@ -84,11 +84,23 @@ SOURCE = {".py", ".js", ".jsx", ".ts", ".tsx", ".rs", ".go", ".java", ".rb",
 ANALYZER = "slop-audit-l1"
 
 # How many checks this hook has to offer. Reported on every finding, so the
-# reader learns the coverage at the same moment as the content. Three of the
-# Slop Audit's twenty indicators mean anything for one file at one moment, and
-# L1.21 is the fourth check: an indicator built for this path rather than
-# adapted to it.
-CHECKS = 4
+# reader learns the coverage at the same moment as the content.
+#
+# L1.18 WAS HERE AND COULD NEVER HAVE WORKED. It takes a repository root and
+# refuses a single file: "point me at a directory (a repo root), not a single
+# file". The hook had always passed it one file, so the call always failed and
+# always reported NOT_RUN. Nobody noticed, because the binary was absent from
+# this machine for a different reason and the two failures looked identical.
+# Installing the binary is what exposed it.
+#
+# Pointing it at the file's parent instead would answer a different question:
+# measured on a directory holding that one file it returns 100.0 and band Slop,
+# which is a statement about the directory, not the file that was just written.
+# A check that answers a question nobody asked is worse than one that is absent.
+#
+# L1.21 replaces it and is why audit called it the one indicator built for this
+# path rather than adapted to it.
+CHECKS = 3
 
 # A file with thirty violations produces a wall nobody reads. Show the first
 # few and say how many were held back, because a truncated list that does not
@@ -129,42 +141,6 @@ def whitespace_finding(text: str) -> dict | None:
     return {"indicator": "L1.16", "verdict": "OUT_OF_SPEC",
             "detail": f"{pct:.1f}% of lines end in whitespace, band is under {WHITESPACE_SLOP}%",
             "action": "run the formatter this project already has"}
-
-
-def analyzer_finding(path: str) -> dict | None:
-    """Delegate the mutable-state ratio. Never reimplement it.
-
-    A NOT_RUN result is returned rather than suppressed. Whether it reaches the
-    reader is decided in main(), by whether there is anything else to say.
-
-    The session-marker file this used to keep is gone. It existed to stop a
-    notice repeating, and the notice should not have been firing at all.
-    """
-    exe = shutil.which(ANALYZER)
-    if exe is None:
-        return {"indicator": "L1.18", "verdict": "NOT_RUN",
-                "detail": f"{ANALYZER} is not on PATH",
-                "action": "this file was not checked for mutable-state ratio"}
-    try:
-        r = subprocess.run([exe, path, "--indicators", "18", "--no-exec", "--format", "json"],
-                           capture_output=True, text=True, timeout=20)
-        data = json.loads(r.stdout)
-    except (OSError, subprocess.SubprocessError, ValueError):
-        return {"indicator": "L1.18", "verdict": "NOT_RUN",
-                "detail": "the analyzer ran and its output could not be read",
-                "action": "run it by hand on this file to see why"}
-    band = ((data.get("results") or {}).get("L1.18") or {}).get("band")
-    value = ((data.get("results") or {}).get("L1.18") or {}).get("value")
-    if band is None:
-        return {"indicator": "L1.18", "verdict": "NOT_RUN",
-                "detail": "the analyzer returned no verdict for this file",
-                "action": "this is a gap in the analyzer, not in the file"}
-    if str(band).lower() in ("healthy", "clean"):
-        return None
-    return {"indicator": "L1.18", "verdict": "OUT_OF_SPEC",
-            "detail": f"mutable-state ratio {value}, band {band}",
-            "action": "move the state into the parameter list, or to the boundary",
-            "caveat": "this threshold is provisional and was set by expert judgment"}
 
 
 def honest_code_finding(path: str) -> dict | None:
@@ -228,8 +204,7 @@ def findings_for(path: str, text: str) -> list[dict]:
     impossible to compute, and the count is the whole of the honesty.
     """
     return [f for f in (line_count_finding(text), whitespace_finding(text),
-                        analyzer_finding(path), honest_code_finding(path))
-            if f is not None]
+                        honest_code_finding(path)) if f is not None]
 
 
 def render(path: str, findings: list[dict]) -> str:

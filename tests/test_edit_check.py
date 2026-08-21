@@ -27,9 +27,9 @@ edit_check = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(edit_check)
 
 CLEAN = "def f(x):\n    return x + 1\n"
-NO_ANALYZER = {"indicator": "L1.18", "verdict": "NOT_RUN",
+NO_ANALYZER = {"indicator": "L1.21", "verdict": "NOT_RUN",
                "detail": "slop-audit-l1 is not on PATH",
-               "action": "this file was not checked for mutable-state ratio"}
+               "action": "this file was not checked against the Honest Code clauses"}
 
 
 def payload(path):
@@ -46,16 +46,12 @@ def run_hook(raw, monkeypatch):
 
 
 def no_analyzer(monkeypatch):
-    """The state of every fresh install: the plugin is there, the binary is not.
-
-    Both delegated checks read the same binary, so absence takes out L1.18 and
-    L1.21 together."""
+    """The state of every fresh install: the plugin is there, the binary is not."""
     monkeypatch.setattr(edit_check.shutil, "which", lambda n: None)
 
 
 def no_delegates(monkeypatch):
-    """Silence the two subprocess checks, for tests about the local two."""
-    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p: None)
+    """Silence the one subprocess check, for tests about the local two."""
     monkeypatch.setattr(edit_check, "honest_code_finding", lambda p: None)
 
 
@@ -127,7 +123,7 @@ def test_a_real_finding_carries_the_absence_with_it(tmp_path, monkeypatch):
     f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
     code, err = run_hook(payload(f), monkeypatch)
     assert code == 2
-    assert "L1.17" in err and "NOT_RUN" in err and "L1.18" in err
+    assert "L1.17" in err and "NOT_RUN" in err and "L1.21" in err
 
 
 def test_every_report_states_its_coverage_before_its_content(tmp_path, monkeypatch):
@@ -136,7 +132,7 @@ def test_every_report_states_its_coverage_before_its_content(tmp_path, monkeypat
     no_analyzer(monkeypatch)
     f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
     first = run_hook(payload(f), monkeypatch)[1].splitlines()[0]
-    assert first == "honest-code: 2 of 4 checks ran on big.py"
+    assert first == "honest-code: 2 of 3 checks ran on big.py"
 
 
 def test_coverage_counts_checks_that_ran_not_findings_that_fired():
@@ -146,14 +142,14 @@ def test_coverage_counts_checks_that_ran_not_findings_that_fired():
         {"indicator": "L1.17", "verdict": "OUT_OF_SPEC", "detail": "d",
          "action": "a"},
         dict(NO_ANALYZER)])
-    assert out.splitlines()[0].startswith("honest-code: 3 of 4")
+    assert out.splitlines()[0].startswith("honest-code: 2 of 3")
 
 
-def test_full_coverage_says_four_of_four():
+def test_full_coverage_says_three_of_three():
     out = edit_check.render("a/big.py", [
         {"indicator": "L1.17", "verdict": "OUT_OF_SPEC", "detail": "d",
          "action": "a"}])
-    assert out.splitlines()[0].startswith("honest-code: 4 of 4")
+    assert out.splitlines()[0].startswith("honest-code: 3 of 3")
 
 
 def test_findings_for_keeps_the_checks_that_did_not_run(tmp_path, monkeypatch):
@@ -162,8 +158,8 @@ def test_findings_for_keeps_the_checks_that_did_not_run(tmp_path, monkeypatch):
     no_analyzer(monkeypatch)
     f = tmp_path / "ok.py"; f.write_text(CLEAN)
     got = edit_check.findings_for(str(f), CLEAN)
-    assert [g["verdict"] for g in got] == ["NOT_RUN", "NOT_RUN"]
-    assert {g["indicator"] for g in got} == {"L1.18", "L1.21"}
+    assert [g["verdict"] for g in got] == ["NOT_RUN"]
+    assert {g["indicator"] for g in got} == {"L1.21"}
 
 
 def test_no_report_ever_claims_the_file_passed():
@@ -194,106 +190,6 @@ def test_every_report_opens_on_coverage_not_on_a_verdict():
                        "detail": "d", "action": "a"}]):
         assert edit_check.render("b.py", findings).startswith("honest-code: ")
         assert "checks ran on" in edit_check.render("b.py", findings)
-
-
-# --- what does surface ------------------------------------------------------
-
-def test_an_over_long_file_surfaces_on_stderr_with_exit_2(tmp_path, monkeypatch):
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
-    no_delegates(monkeypatch)
-    code, err = run_hook(payload(f), monkeypatch)
-    assert code == 2 and "L1.17" in err and "1001 lines" in err
-
-
-def test_a_file_at_the_limit_is_silent(tmp_path, monkeypatch):
-    f = tmp_path / "edge.py"; f.write_text("x = 1\n" * 1000)
-    no_delegates(monkeypatch)
-    assert run_hook(payload(f), monkeypatch) == (0, "")
-
-
-def test_trailing_whitespace_over_the_band_surfaces(tmp_path, monkeypatch):
-    lines = ["x = 1   "] * 10 + ["y = 2"] * 90
-    f = tmp_path / "ws.py"; f.write_text("\n".join(lines) + "\n")
-    no_delegates(monkeypatch)
-    code, err = run_hook(payload(f), monkeypatch)
-    assert code == 2 and "L1.16" in err and "10.0%" in err
-
-
-def test_trailing_whitespace_inside_the_band_is_silent(tmp_path, monkeypatch):
-    lines = ["x = 1   "] * 2 + ["y = 2"] * 98
-    f = tmp_path / "ws.py"; f.write_text("\n".join(lines) + "\n")
-    no_delegates(monkeypatch)
-    assert run_hook(payload(f), monkeypatch) == (0, "")
-
-
-def test_every_finding_carries_an_action(tmp_path, monkeypatch):
-    """A verdict the reader cannot act on is a complaint."""
-    no_analyzer(monkeypatch)
-    f = tmp_path / "big.py"; f.write_text("x = 1   \n" * 1001)
-    for finding in edit_check.findings_for(str(f), f.read_text()):
-        assert finding["action"]
-
-
-# --- the delegated indicator ------------------------------------------------
-
-def test_a_missing_analyzer_is_not_run_rather_than_passed(tmp_path, monkeypatch):
-    """"Not checked" must never read as "passed"."""
-    no_analyzer(monkeypatch)
-    f = edit_check.analyzer_finding(str(tmp_path / "x.py"))
-    assert f["verdict"] == "NOT_RUN" and "not on PATH" in f["detail"]
-
-
-def test_the_hook_never_reimplements_the_mutable_state_ratio():
-    """The authoritative definition lives in the Honest Framework with its
-    bound-literal amendment. A second implementation under the same name is
-    how two tools come to disagree while both claiming the standard."""
-    src = (ROOT / "hooks" / "edit_check.py").read_text()
-    assert "import ast" not in src
-    assert edit_check.ANALYZER in src
-
-
-def fake_run(stdout):
-    return lambda *a, **k: type("R", (), {"stdout": stdout})()
-
-
-def test_a_healthy_band_from_the_analyzer_is_silent(monkeypatch):
-    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
-    monkeypatch.setattr(edit_check.subprocess, "run", fake_run(json.dumps(
-        {"results": {"L1.18": {"band": "Healthy", "value": 3.0}}})))
-    assert edit_check.analyzer_finding("x.py") is None
-
-
-def test_a_slop_band_from_the_analyzer_surfaces_with_its_caveat(monkeypatch):
-    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
-    monkeypatch.setattr(edit_check.subprocess, "run", fake_run(json.dumps(
-        {"results": {"L1.18": {"band": "Slop", "value": 66.7}}})))
-    f = edit_check.analyzer_finding("x.py")
-    assert f["verdict"] == "OUT_OF_SPEC" and "66.7" in f["detail"]
-    assert "provisional" in f["caveat"]
-
-
-def test_an_unparseable_analyzer_response_did_not_run(monkeypatch):
-    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
-    monkeypatch.setattr(edit_check.subprocess, "run", fake_run("not json"))
-    assert edit_check.analyzer_finding("x.py")["verdict"] == "NOT_RUN"
-
-
-def test_an_analyzer_with_no_verdict_did_not_run(monkeypatch):
-    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
-    monkeypatch.setattr(edit_check.subprocess, "run", fake_run(json.dumps({"results": {}})))
-    assert edit_check.analyzer_finding("x.py")["verdict"] == "NOT_RUN"
-
-
-def test_an_analyzer_that_will_not_run_did_not_run(monkeypatch):
-    def boom(*a, **k):
-        raise OSError("no")
-    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
-    monkeypatch.setattr(edit_check.subprocess, "run", boom)
-    assert edit_check.analyzer_finding("x.py")["verdict"] == "NOT_RUN"
-
-
-# --- run it the way Claude Code does ----------------------------------------
-
 def test_the_hook_runs_as_a_subprocess_and_is_silent_on_a_clean_file(tmp_path):
     f = tmp_path / "ok.py"; f.write_text(CLEAN)
     p = subprocess.run([sys.executable, str(ROOT / "hooks" / "edit_check.py")],
@@ -440,3 +336,28 @@ def test_the_hook_never_reimplements_the_honest_code_clauses():
     src = (ROOT / "hooks" / "edit_check.py").read_text()
     assert "--honest-code" in src
     assert "import ast" not in src
+
+
+def test_l1_18_is_not_delegated_because_it_cannot_read_one_file():
+    """It takes a repository root and refuses a single file: "point me at a
+    directory (a repo root), not a single file". The hook always passed it one
+    file, so the call always failed and always reported NOT_RUN, and the
+    binary's absence made that look like the same failure.
+
+    Pointing it at the parent instead answers a different question: on a
+    directory holding that one file it returns 100.0 and band Slop, which
+    describes the directory rather than the file just written."""
+    src = (ROOT / "hooks" / "edit_check.py").read_text()
+    assert "--indicators" not in src
+    assert "analyzer_finding" not in src
+    assert not hasattr(edit_check, "analyzer_finding")
+
+
+def test_trailing_whitespace_over_the_band_surfaces(tmp_path, monkeypatch):
+    """Removed by accident while deleting the L1.18 tests, which left L1.16's
+    finding branch uncovered and the gap invisible until coverage said so."""
+    lines = ["x = 1   "] * 10 + ["y = 2"] * 90
+    f = tmp_path / "ws.py"; f.write_text("\n".join(lines) + "\n")
+    no_delegates(monkeypatch)
+    code, err = run_hook(payload(f), monkeypatch)
+    assert code == 2 and "L1.16" in err and "10.0%" in err
