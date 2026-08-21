@@ -58,9 +58,23 @@ exists.
 Not "Two things." Not a restatement of the question. The finding. If your opening
 sentence could sit on any other report, it is not a BLUF.
 
-**2. Bad news goes above good news.** Every time. A reader stops at the top once
-they have what they need, so anything you bury you have hidden. If you were wrong
-earlier, say so before you say what you fixed.
+**2. Bad news goes above good news, and only if it is still news.** A reader
+stops at the top once they have what they need, so anything you bury you have
+hidden. If you were wrong in a way that still affects them, say so before you
+say what you fixed.
+
+A failure you already repaired is not bad news, it is a diary entry. A theory
+you replaced before telling anyone is not a correction, it is your working. Both
+cost the reader a full read to establish they can do nothing with either.
+
+The test is whether they would be misled without it, or have to act on it. "I
+broke dev and restored it, verified" fails both: it is fixed, and they were
+never going to touch it. "I told you the cause was X and it is not" fails both
+if you never acted on X. A session led with those two and was asked what made it
+think anyone cared. Nothing did.
+
+**You do not have to say something.** If there is nothing the reader must act
+on, the honest report is short or absent. Filling the space is not thoroughness.
 
 **3. Every claim carries its evidence on the same line.** A number, a command
 output, a quoted line. "The homepage had no links" is an assertion. "anchors on
