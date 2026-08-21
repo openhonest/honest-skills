@@ -5,7 +5,15 @@ description: Write a request for a decision the way you would brief an executive
 
 # Decision brief
 
-You are asking someone to decide. They will read until they can decide and then stop.
+## The prime directive: reduce the reader's cognitive load
+
+Every rule below serves this one. Where a rule seems to conflict with it, this one wins.
+
+They will read until they can decide and then stop, so everything under that point is unread and everything above it that does not help them decide was taken from them. A brief that makes someone reconstruct the question, or hold evidence in their head to reach the ask, has moved your work onto them.
+
+Three tests: would they decide differently for having read this sentence, do they have to hold anything to answer, and could they stop at the first line and be right.
+
+You are asking someone to decide.
 
 ## Do not write one when there is only one answer
 

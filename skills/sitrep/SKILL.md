@@ -6,6 +6,29 @@ allowed-tools: Read Grep Glob Bash
 
 # SITREP: brief the reader, do not narrate at them
 
+## The prime directive: reduce the reader's cognitive load
+
+Every rule below serves this one, and where a rule seems to conflict with it,
+this one wins.
+
+A report costs the reader attention whether or not it carries anything. They
+pay to read a sentence before they learn it was worth reading, so every sentence
+that changes nothing was taken from them. Thoroughness spends what it does not
+own.
+
+Three tests, applied to the draft and not to the intention:
+
+- **Would they act differently for having read this?** If not, cut it.
+- **Do they have to hold anything to answer?** If yes, move it up.
+- **Could they stop at the first line and be right?** If not, the first line is
+  wrong.
+
+Every failure this skill exists to name is the same failure: work moved from the
+writer to the reader. A buried ask makes them assemble the question. A wall of
+findings makes them sort. A resolved incident reported after the fact makes them
+read to discover there is nothing to do. None of those are dishonest. They are
+all expensive.
+
 Someone asked a question. They want the answer, then the evidence, then what
 they have to do about it. They do not want to watch you think.
 
