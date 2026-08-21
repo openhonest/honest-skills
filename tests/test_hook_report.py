@@ -102,11 +102,21 @@ def test_a_file_with_fewer_findings_is_counted_separately(tmp_path):
     assert "fewer than before          1  b.py" in hook_report.loop_closed(rows)
 
 
+def test_the_report_says_it_cannot_tell_ignored_from_overruled(tmp_path):
+    """One session's three firings were one filed issue and two reasoned
+    rejections. Zero code changes, and nothing about that was ignoring it."""
+    rows = [{"event": "e", "verdict": "fired", "why": "x", "findings": {"c.py": ["L1.21"]}},
+            {"event": "e", "verdict": "fired", "why": "x", "findings": {"c.py": ["L1.21"]}}]
+    out = hook_report.loop_closed(rows)
+    assert "UNCHANGED IS NOT IGNORED" in out
+    assert "overruled with a reason" in out and "deferred with a ticket" in out
+
+
 def test_a_file_that_did_not_improve_is_not_counted_as_progress(tmp_path):
     rows = [{"event": "e", "verdict": "fired", "why": "x", "findings": {"c.py": ["L1.21"]}},
             {"event": "e", "verdict": "fired", "why": "x", "findings": {"c.py": ["L1.21"]}}]
     out = hook_report.loop_closed(rows)
-    assert "same or worse              1  c.py" in out
+    assert "unchanged                  1  c.py" in out
 
 
 def test_a_file_seen_once_is_evidence_of_nothing(tmp_path):
@@ -114,7 +124,7 @@ def test_a_file_seen_once_is_evidence_of_nothing(tmp_path):
     rows = [{"event": "e", "verdict": "fired", "why": "x", "findings": {"d.py": ["L1.21"]}}]
     out = hook_report.loop_closed(rows)
     assert "fired once and not seen again: 1" in out
-    assert "not evidence either way" in out
+    assert "evidence of nothing either way" in out
 
 
 def test_rows_without_findings_are_ignored_rather_than_counted(tmp_path):

@@ -76,9 +76,15 @@ def loop_closed(rows: list[dict]) -> str:
     out = [f"\nfiles judged more than once: {sum(1 for h in seen.values() if len(h) > 1)}",
            f"  went to zero findings   {len(fixed):>4}  {', '.join(sorted(fixed)[:6])}",
            f"  fewer than before       {len(better):>4}  {', '.join(sorted(better)[:6])}",
-           f"  same or worse           {len(open_still):>4}  {', '.join(sorted(open_still)[:6])}",
+           f"  unchanged               {len(open_still):>4}  {', '.join(sorted(open_still)[:6])}",
            f"\nfired once and not seen again: {len(once)}",
-           "  not evidence either way. A file nobody revisited is not one that was ignored."]
+           "",
+           "UNCHANGED IS NOT IGNORED, and this report cannot tell them apart.",
+           "A finding can be overruled with a reason, deferred with a ticket, or",
+           "passed over. All three leave the file alone and read identically here.",
+           "One session's three firings were one filed issue and two reasoned",
+           "rejections: zero code changes, and nothing about that was ignoring it.",
+           "A file seen once is evidence of nothing either way."]
     return "\n".join(out)
 
 
