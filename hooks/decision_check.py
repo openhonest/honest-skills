@@ -337,6 +337,21 @@ SHAPES = (
 )
 
 
+def matched_patterns(text: str) -> list[str]:
+    """Which patterns actually matched, for the trace.
+
+    The lead sentence alone said a shape fired without saying why, so three
+    attempts to find which pattern carried the volume each used a different
+    denominator and produced a different answer. Recording the pattern turns a
+    rate into a diagnosis.
+    """
+    clean = usable(text)
+    return [p for p in HANDS_THE_DECISION_OVER + OFFERS_A_CHOICE
+            + ASKS_TO_CONTINUE + CONTRADICTS_A_RULING
+            + ANNOUNCES_OUTWARD_ACTION
+            if re.search(p, clean, LINE)]
+
+
 def shape_of(text: str) -> str:
     """Every shape that matches, not the first.
 
@@ -572,7 +587,7 @@ def on_stop(payload: dict) -> tuple[int, str]:
     if fired_before(payload.get("session_id") or "", text):
         trace("Stop", "declined", "already sent back once")
         return 0, ""
-    trace("Stop", "fired", lead)
+    trace("Stop", "fired", " | ".join(matched_patterns(text)) or lead)
     return 2, advice_for(text, lead)
 
 

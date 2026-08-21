@@ -637,7 +637,11 @@ def test_a_firing_turn_records_why_it_fired(tmp_path, monkeypatch):
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
     stop(tmp_path, "Should I ship it?")
     row = json.loads(log.read_text().splitlines()[0])
-    assert row["verdict"] == "fired" and "asking for a decision" in row["why"]
+    assert row["verdict"] == "fired"
+    # The pattern, not the lead. The lead said a shape fired without saying
+    # why, so three attempts to find which pattern carried the volume each
+    # used a different denominator and gave a different answer.
+    assert "should I" in row["why"]
 
 
 @pytest.mark.parametrize("text,why", [
@@ -1073,3 +1077,21 @@ def test_it_no_longer_tells_you_to_omit_the_background(tmp_path):
     assert "do not write them again" not in message
     assert "stands on its own" in message
     assert "Compressed is not omitted" in message
+
+
+def test_the_trace_records_every_pattern_that_matched(tmp_path, monkeypatch):
+    """A message can trip more than one, and knowing which is the whole point
+    of recording it."""
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    stop(tmp_path, "Want me to push it? That is your call.")
+    why = json.loads(log.read_text().splitlines()[-1])["why"]
+    assert "want me to" in why and "|" in why
+
+
+def test_a_decline_records_no_pattern(tmp_path, monkeypatch):
+    """Nothing matched, so there is nothing to name."""
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    stop(tmp_path, "The tests pass.")
+    assert json.loads(log.read_text().splitlines()[-1])["why"] == "no shape matched"
