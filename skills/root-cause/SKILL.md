@@ -87,8 +87,7 @@ If you propose or apply a fix, prove it addresses the proven root, ideally by re
 
 ## How to present it: SITREP shape
 
-The chain is the work. The report is not the chain. Lead with the root cause and
-what it costs, then show the chain underneath for anyone who wants to check it.
+The chain is the work. The report is not the chain. Lead with the root cause and what it costs, then show the chain underneath for anyone who wants to check it.
 
 ```
 BLUF: <the root cause, in one sentence, and what it breaks>
@@ -115,22 +114,15 @@ GAPS: <every link you could not prove, and what access would close it>
 
 Rules that survive from the analysis into the report:
 
-- **Every link carries its evidence on the same line.** A chain link without
-  evidence is a story. Cut it or mark it unverified in GAPS.
-- **Never write "most likely" in the CHAIN.** Confidence belongs in ASSESSMENT,
-  named per link.
-- **SCOPE is not optional.** The reported case is a sample, not the boundary.
-  One record or nineteen thousand changes both the severity and the fix.
-- **Two roots is normal.** One introduced the bad state; one let it persist or
-  spread unnoticed. Report both, and say which fix closes which.
-- **A fix is proven by the evidence changing**, not by having run the fix. Show
-  the count dropping or the value flipping.
+- **Every link carries its evidence on the same line.** A chain link without evidence is a story. Cut it or mark it unverified in GAPS.
+- **Never write "most likely" in the CHAIN.** Confidence belongs in ASSESSMENT, named per link.
+- **SCOPE is not optional.** The reported case is a sample, not the boundary. One record or nineteen thousand changes both the severity and the fix.
+- **Two roots is normal.** One introduced the bad state; one let it persist or spread unnoticed. Report both, and say which fix closes which.
+- **A fix is proven by the evidence changing**, not by having run the fix. Show the count dropping or the value flipping.
 
 Keep prose over jargon. Never cite a number the evidence beside it does not show.
 
-Run `tools/clarity.py` on the draft before sending. It prints your first sentence
-back at you, which is the check most often failed: a BLUF that restates the
-question instead of naming the cause.
+Run `tools/clarity.py` on the draft before sending. It prints your first sentence back at you, which is the check most often failed: a BLUF that restates the question instead of naming the cause.
 
 ## Anti-patterns (these fail the task)
 
