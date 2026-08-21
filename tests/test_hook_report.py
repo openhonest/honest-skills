@@ -79,3 +79,45 @@ def test_no_path_anywhere_is_an_error_not_a_guess(tmp_path, monkeypatch, capsys)
     monkeypatch.setattr(sys, "argv", ["hook_report.py"])
     assert hook_report.main() == 2
     assert "unset" in capsys.readouterr().out
+
+
+# --- did a firing lead to a fix ---------------------------------------------
+
+def test_a_file_that_went_to_zero_is_counted_as_fixed(tmp_path):
+    """The only measurement that says the hook changed anything. A firing
+    count says it spoke."""
+    rows = [{"event": "PostToolUse:bash", "verdict": "fired", "why": "x",
+             "findings": {"a.py": ["L1.21", "L1.21"]}},
+            {"event": "PostToolUse:bash", "verdict": "declined", "why": "x",
+             "findings": {"a.py": []}}]
+    out = hook_report.loop_closed(rows)
+    assert "went to zero findings      1  a.py" in out
+
+
+def test_a_file_with_fewer_findings_is_counted_separately(tmp_path):
+    rows = [{"event": "e", "verdict": "fired", "why": "x",
+             "findings": {"b.py": ["L1.21", "L1.21", "L1.21"]}},
+            {"event": "e", "verdict": "fired", "why": "x",
+             "findings": {"b.py": ["L1.21"]}}]
+    assert "fewer than before          1  b.py" in hook_report.loop_closed(rows)
+
+
+def test_a_file_that_did_not_improve_is_not_counted_as_progress(tmp_path):
+    rows = [{"event": "e", "verdict": "fired", "why": "x", "findings": {"c.py": ["L1.21"]}},
+            {"event": "e", "verdict": "fired", "why": "x", "findings": {"c.py": ["L1.21"]}}]
+    out = hook_report.loop_closed(rows)
+    assert "same or worse              1  c.py" in out
+
+
+def test_a_file_seen_once_is_evidence_of_nothing(tmp_path):
+    """A file nobody revisited is not a file that was ignored."""
+    rows = [{"event": "e", "verdict": "fired", "why": "x", "findings": {"d.py": ["L1.21"]}}]
+    out = hook_report.loop_closed(rows)
+    assert "fired once and not seen again: 1" in out
+    assert "not evidence either way" in out
+
+
+def test_rows_without_findings_are_ignored_rather_than_counted(tmp_path):
+    """Older trace lines carry no findings field, and absent is not zero."""
+    assert "judged more than once: 0" in hook_report.loop_closed(
+        [{"event": "e", "verdict": "fired", "why": "x"}])

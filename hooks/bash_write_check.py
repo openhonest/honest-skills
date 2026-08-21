@@ -111,21 +111,27 @@ def main() -> int:
         trace("PostToolUse:bash", "declined", "no source file changed")
         return 0
 
-    reports = []
+    reports, judged = [], {}
     for path in written:
         try:
             text = Path(path).read_text(errors="replace")
         except OSError:
             continue
         findings = edit_check.findings_for(path, text)
-        if not any(f["verdict"] != "NOT_RUN" for f in findings):
+        hits = [f["indicator"] for f in findings if f["verdict"] != "NOT_RUN"]
+        # Recorded whether or not it is reported, so a file that fires once
+        # and comes back clean is visible as a fix rather than as silence.
+        judged[os.path.basename(path)] = hits
+        if not hits:
             continue
         if already_said(path, text):
             continue
         reports.append(edit_check.render(path, findings))
 
     trace("PostToolUse:bash", "fired" if reports else "declined",
-          f"{len(written)} changed, {len(reports)} with findings")
+          f"{len(written)} changed, {len(reports)} with findings",
+          files=[os.path.basename(p) for p in written] or None,
+          findings=judged or None)
     if not reports:
         return 0
     print("\n".join(reports), file=sys.stderr)

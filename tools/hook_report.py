@@ -56,6 +56,32 @@ def render(rows: list[dict]) -> str:
     return "\n".join(out)
 
 
+def loop_closed(rows: list[dict]) -> str:
+    """Files that fired and later came back with fewer findings, or none.
+
+    This is the only measurement that says the hook changed anything. A firing
+    count says it spoke; a file going from findings to none says someone acted
+    on what it said. Files still open at the end of the trace are counted
+    separately rather than folded into either, because a file nobody has
+    revisited is not a file that was ignored.
+    """
+    seen: dict[str, list[int]] = {}
+    for r in rows:
+        for name, hits in (r.get("findings") or {}).items():
+            seen.setdefault(name, []).append(len(hits))
+    fixed = [n for n, h in seen.items() if h[0] > 0 and h[-1] == 0]
+    better = [n for n, h in seen.items() if h[-1] and h[-1] < h[0]]
+    open_still = [n for n, h in seen.items() if h[-1] and h[-1] >= h[0]]
+    once = [n for n, h in seen.items() if len(h) == 1 and h[0] > 0]
+    out = [f"\nfiles judged more than once: {sum(1 for h in seen.values() if len(h) > 1)}",
+           f"  went to zero findings   {len(fixed):>4}  {', '.join(sorted(fixed)[:6])}",
+           f"  fewer than before       {len(better):>4}  {', '.join(sorted(better)[:6])}",
+           f"  same or worse           {len(open_still):>4}  {', '.join(sorted(open_still)[:6])}",
+           f"\nfired once and not seen again: {len(once)}",
+           "  not evidence either way. A file nobody revisited is not one that was ignored."]
+    return "\n".join(out)
+
+
 def main() -> int:
     argv = sys.argv[1:]
     last = 0
@@ -68,7 +94,9 @@ def main() -> int:
         print("no path given and HONEST_HOOK_TRACE is unset")
         return 2
     rows = read(path)
-    print(render(rows[-last:] if last else rows))
+    window = rows[-last:] if last else rows
+    print(render(window))
+    print(loop_closed(window))
     return 0
 
 

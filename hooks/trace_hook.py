@@ -11,7 +11,7 @@ import json
 import os
 
 
-def trace(event: str, verdict: str, why: str) -> None:
+def trace(event: str, verdict: str, why: str, **facts: object) -> None:
     """Record that the hook ran, when someone asks for the record.
 
     A hook that stays silent leaves no way to tell "ran and correctly declined"
@@ -28,8 +28,13 @@ def trace(event: str, verdict: str, why: str) -> None:
         return
     try:
         with open(path, "a") as fh:
-            fh.write(json.dumps({"event": event, "verdict": verdict,
-                                 "why": why}) + "\n")
+            row = {"event": event, "verdict": verdict, "why": why}
+            # Named fields rather than more prose in `why`. Whether a firing
+            # led to a fix cannot be read out of a sentence, and that is the
+            # only question that says the loop closed rather than merely
+            # spoke.
+            row.update({k: v for k, v in facts.items() if v is not None})
+            fh.write(json.dumps(row) + "\n")
     except OSError:
         pass
 
