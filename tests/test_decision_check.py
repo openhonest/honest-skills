@@ -118,7 +118,7 @@ def test_a_truncated_line_from_seeking_is_skipped(tmp_path):
 def test_a_question_offering_a_choice_fires(tmp_path, text):
     code, message = stop(tmp_path, text)
     assert code == 2
-    assert "hold in their head" in message
+    assert "Put the\nask first" in message or "hold anything in their head" in message
 
 
 def test_the_message_names_what_is_missing(tmp_path):
@@ -139,7 +139,7 @@ def test_a_partial_brief_is_told_only_what_it_lacks(tmp_path):
 def test_the_advice_leads_on_the_section_that_changes_behaviour(tmp_path):
     """Doing nothing needs no decision, so it wins by default."""
     _, message = stop(tmp_path, "Should I ship it?")
-    assert "wins by default" in message
+    assert "wins by\ndefault" in message or "wins by default" in message
 
 
 # --- the loop, which is the dangerous failure -------------------------------
@@ -251,7 +251,7 @@ def test_main_writes_the_advice_to_stderr_and_exits_2(tmp_path, monkeypatch):
         "transcript_path": transcript(tmp_path, "Should I ship it?"),
         "session_id": str(uuid.uuid4())})
     code, err = run(payload, monkeypatch)
-    assert code == 2 and "hold in their head" in err
+    assert code == 2 and "ask first" in err
 
 
 def test_it_runs_as_a_subprocess_and_is_silent_on_an_ordinary_turn(tmp_path):
@@ -342,7 +342,7 @@ def test_main_writes_the_advice_to_stderr_and_exits_2(tmp_path, monkeypatch):
         "transcript_path": transcript(tmp_path, "Should I ship it?"),
         "session_id": str(uuid.uuid4())})
     code, err = run(payload, monkeypatch)
-    assert code == 2 and "hold in their head" in err
+    assert code == 2 and "ask first" in err
 
 
 def test_it_runs_as_a_subprocess_and_is_silent_on_an_ordinary_turn(tmp_path):
@@ -512,10 +512,10 @@ def test_an_ask_at_the_end_of_a_long_message_is_named_as_buried(tmp_path):
            "That is a change to signup code, your call, not mine."
     _, message = stop(tmp_path, text)
     assert "percent of the way in" in message
-    assert "nobody can" in message
+    assert "Move it to the top" in message
     # The substance is already there. Do not tell them to add five sections.
     assert "Missing here" not in message
-    assert "Move the ask to the top" in message
+    assert "Move it to the top" in message
 
 
 def test_a_short_message_is_never_called_buried(tmp_path):
@@ -544,7 +544,7 @@ def test_a_bare_question_still_gets_the_full_shape(tmp_path):
     """Nothing under it, so the five sections are the fix rather than noise."""
     _, message = stop(tmp_path, "Should I ship it?")
     assert "Missing here" in message
-    assert "Move the ask to the top" not in message
+    assert "Move it to the top" not in message
 
 
 def test_the_two_advices_are_never_both_given(tmp_path):
@@ -554,7 +554,7 @@ def test_the_two_advices_are_never_both_given(tmp_path):
                    + "That is your call, not mine.")
     for text in (long_buried, "Should I ship it?"):
         _, message = stop(tmp_path, text)
-        assert ("Missing here" in message) != ("Move the ask" in message)
+        assert ("Missing here" in message) != ("Move it to the top" in message)
 
 
 # --- the sitrep handoff, which is the commonest shape of all ----------------
@@ -596,7 +596,7 @@ def test_a_real_sitrep_is_told_to_brief_the_ask_not_to_rewrite_itself(tmp_path):
     _, message = stop(tmp_path, text)
     assert "This report is fine" in message
     assert "Missing here" not in message
-    assert "Move the ask to the top" not in message
+    assert "Move it to the top" not in message
 
 
 def test_the_three_advices_are_mutually_exclusive(tmp_path):
@@ -611,7 +611,7 @@ def test_the_three_advices_are_mutually_exclusive(tmp_path):
     seen = []
     for text in cases.values():
         _, m = stop(tmp_path, text)
-        seen.append(("This report is fine" in m, "Move the ask" in m,
+        seen.append(("This report is fine" in m, "Move it to the top" in m,
                      "Missing here" in m))
     for flags in seen:
         assert sum(flags) == 1, flags
@@ -794,7 +794,7 @@ def test_every_advice_offers_the_exit_first(tmp_path, text):
     the shape compulsory."""
     _, message = stop(tmp_path, text)
     assert "FIRST, THE EXIT" in message
-    assert "do not\nask" in message or "do not ask" in message
+    assert "do not\nask" in message
     # First means first: before anything telling you how to fill the shape in.
     # The move-it advice names no sections at all, so there is nothing to
     # order against there.
@@ -806,8 +806,8 @@ def test_every_advice_offers_the_exit_first(tmp_path, text):
 def test_the_exit_names_the_test_for_a_real_fork(tmp_path):
     """"Can I name three courses" is not the test. Anyone can."""
     _, message = stop(tmp_path, "Should I ship it?")
-    assert "proceed the same way whatever the answer" in message
-    assert "you would actually\ntake" in message or "you would actually take" in message
+    assert "same way whatever the answer" in message
+    assert "do not\nask" in message
 
 
 # --- the binomial split: down into action, or up to the standard ------------
@@ -822,15 +822,15 @@ def test_a_message_that_already_answered_is_pushed_down_into_action(tmp_path):
             "Cost of no action. 3 days lost.\n\n"
             "Which do you want: A, B, C, or D?")
     _, message = stop(tmp_path, text)
-    assert message.startswith("You already answered this")
-    assert "Really?" in message
+    assert message.startswith("You named a recommendation")
+    assert "any universe" in message
     assert "Missing here" not in message
 
 
 def test_a_message_with_no_recommendation_is_pushed_up_to_the_standard(tmp_path):
     """The other half of the split. A bare ask still gets the shape."""
     _, message = stop(tmp_path, "Should I ship it?")
-    assert not message.startswith("You already answered this")
+    assert not message.startswith("You named a recommendation")
     assert "Missing here" in message
 
 
@@ -840,8 +840,8 @@ def test_the_down_advice_names_the_cost_of_asking(tmp_path):
             "Current situation. B.\n\nOptions.\n\n- a\n- b\n\n"
             "Cost of no action. 3 days.\n\nWhich do you want?")
     _, message = stop(tmp_path, text)
-    assert "buys nothing" in message
-    assert "would genuinely proceed differently" in message
+    assert "buys\nnothing" in message
+    assert "any universe" in message
 
 
 # --- the manufactured blocker -----------------------------------------------
@@ -855,8 +855,8 @@ def test_effort_priced_as_a_blocker_is_named(tmp_path):
             "- Needs you: rebuilding them honestly means driving a real "
             "SQLite. Slower per scenario. Say real or double.")
     _, message = stop(tmp_path, text)
-    assert "effort is not a cost to the reader" in message
-    assert "CANNOT do" in message
+    assert "effort is not a\ncost to the reader" in message
+    assert "cannot do" in message
 
 
 @pytest.mark.parametrize("text", [
@@ -867,7 +867,7 @@ def test_a_genuine_blocker_is_not_accused_of_manufacturing_one(tmp_path, text):
     """Permission and capability are the two that survive. Adding the note to
     them would teach the reader to skip it."""
     _, message = stop(tmp_path, text)
-    assert "effort is not a cost to the reader" not in message
+    assert "effort is not a\ncost to the reader" not in message
 
 
 def test_the_effort_words_are_read_as_prose_not_as_mentions(tmp_path):
@@ -875,7 +875,7 @@ def test_the_effort_words_are_read_as_prose_not_as_mentions(tmp_path):
     text = ('FINDINGS. Fixed.\n- Needs you: the login. I removed the phrase '
             '"slower per scenario" from the draft.')
     _, message = stop(tmp_path, text)
-    assert "effort is not a cost to the reader" not in message
+    assert "effort is not a\ncost to the reader" not in message
 
 
 # --- asking permission to continue ------------------------------------------
@@ -916,8 +916,8 @@ def test_the_carry_on_advice_says_when_stopping_is_right(tmp_path):
     """An advice that only says "do not stop" would be wrong the one time
     stopping matters."""
     _, message = stop(tmp_path, "Want me to keep going?")
-    assert "genuinely needs them" in message
-    assert "you will not be able to proceed" in message
+    assert "genuinely cannot proceed" in message
+    assert "cannot proceed" in message
 
 
 # --- a recommendation stated in prose, not under a heading -------------------
@@ -929,7 +929,7 @@ def test_a_prose_recommendation_with_a_menu_is_pushed_down(tmp_path):
             "first: it is a factual contradiction in shipped text, and the "
             "correction makes the credential stronger.")
     _, message = stop(tmp_path, text)
-    assert message.startswith("You already answered this")
+    assert message.startswith("You named a recommendation")
 
 
 @pytest.mark.parametrize("phrase", [
@@ -938,7 +938,7 @@ def test_a_prose_recommendation_with_a_menu_is_pushed_down(tmp_path):
 ])
 def test_every_way_of_recommending_in_prose_counts(tmp_path, phrase):
     _, message = stop(tmp_path, f"{phrase} Which do you want?")
-    assert message.startswith("You already answered this")
+    assert message.startswith("You named a recommendation")
 
 
 def test_a_menu_with_no_recommendation_still_gets_the_shape(tmp_path):
@@ -951,7 +951,7 @@ def test_a_recommendation_with_no_menu_gets_the_shape_not_the_push(tmp_path):
     """Handing over after recommending is the normal shape, not the ritual.
     What is missing is what the reader needs to weigh it against."""
     _, message = stop(tmp_path, "I would fix item 2 first. Your call.")
-    assert not message.startswith("You already answered this")
+    assert not message.startswith("You named a recommendation")
     assert "Missing here" in message
 
 
@@ -987,7 +987,7 @@ def test_the_move_it_advice_no_longer_promises_more_than_it_delivers(tmp_path):
     text = "Evidence here. " * 160 + "That is your call."
     _, message = stop(tmp_path, text)
     assert "Moving it is enough" in message
-    assert "will not be sent back again" in message
+    assert "nothing here asks for headings" in message
 
 
 def test_a_bare_ask_put_first_is_still_a_bare_ask(tmp_path):
@@ -1019,7 +1019,7 @@ def test_a_ritual_message_cannot_hide_behind_the_exemption(tmp_path):
             "it is the only one that keeps the tree green and it costs an "
             "hour of work rather than a day of it, which matters here.")
     _, message = stop(tmp_path, text)
-    assert message.startswith("You already answered this")
+    assert message.startswith("You named a recommendation")
 
 
 # --- a description of two things differing is not a dispute -----------------
@@ -1071,5 +1071,5 @@ def test_the_needs_you_advice_asks_for_all_five_sections(tmp_path):
 def test_it_no_longer_tells_you_to_omit_the_background(tmp_path):
     _, message = stop(tmp_path, "FINDINGS. Fine.\n- Needs you: whether to commit now.")
     assert "do not write them again" not in message
-    assert "STAND ON ITS OWN" in message
+    assert "stands on its own" in message
     assert "Compressed is not omitted" in message

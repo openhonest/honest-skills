@@ -428,29 +428,17 @@ PRICES_ITS_OWN_EFFORT = (
 )
 
 MANUFACTURED_BLOCKER = """
-And check whether this is a blocker at all. It prices your own effort, and
-effort is not a cost to the reader. An item under "Needs you" has to be
-something you CANNOT do, something you may not do without their say-so, or a
-preference that changes what you build. Work is none of those, and work is
-yours.
-
-An agent reported "rebuilding them honestly means driving a real database,
-slower per scenario, say real or double." Asked why that blocked it, it
-answered: "It isn't. I already stood one up three times today in four lines
-each." Its own report had named the answer two paragraphs earlier.
+Check it is a blocker at all. This prices your own effort, and effort is not a
+cost to the reader. A "Needs you" item is something you cannot do, may not do
+without their say-so, or would build differently depending on their answer.
+Work is none of those.
 """
 
 
 CARRY_ON = """You are asking permission to continue work you were already told
-to do. Continuing is not a fork: doing it is the work, and stopping to ask
-turns one turn of progress into two turns of nothing.
+to do. Carry on, and report what changed when you are done.
 
-A session asked "want me to keep going on it?" and then said it itself: "You
-said keep going twice. Asking again was the ritual."
-
-Carry on. Report what changed when you are done, not what you are about to
-start. If you hit something that genuinely needs them, that is the moment to
-stop, and it will be obvious because you will not be able to proceed."""
+Stop only when you genuinely cannot proceed. That will be obvious."""
 
 
 def asks_to_continue(text: str) -> bool:
@@ -476,20 +464,11 @@ def has_needs_you(text: str) -> bool:
 #
 # DOWN: you already know the answer. Act, and report what you did.
 # UP: this is a real fork. Give the reader what they need to take it.
-ACT_ON_IT = """You already answered this. You named a recommendation and then
-asked anyway.
+ACT_ON_IT = """You named a recommendation and then recited the menu back.
 
-Apply the really test. Look at the options you are offering and ask: is there
-any universe in which they pick B? Really? If there is not, B is scenery, and
-offering it spends the reader's attention on a course you had already rejected.
-
-So do not ask. Do the thing, and report what you did and why, with the evidence
-that made it obvious. If you are wrong they will say so, and that costs one
-turn. Asking costs one turn too, and buys nothing.
-
-Ask only when you would genuinely proceed differently depending on the answer,
-and the choice turns on something the reader knows and you do not, or a cost
-only they can accept."""
+Is there any universe in which they pick B? If not, B is scenery. Do the thing
+and report it. Being wrong costs one turn; asking costs one turn and buys
+nothing."""
 
 
 # Three advices for the questions that survive that test, because three
@@ -509,83 +488,43 @@ only they can accept."""
 BRIEF_THE_ASK = """This report is fine. The "Needs you" line inside it is not.
 
 FIRST, THE EXIT. If you would proceed the same way whatever the answer, do not
-ask. Say what you found, say what you are doing, and do it. Manufacturing
-alternatives so this shape can be filled in wastes the reader's attention on
-courses you had already rejected, and it asks them to re-derive a conclusion
-you had already reached. A real fork is two or more courses you would actually
-take, where the choice turns on something the reader knows and you do not.
+ask. Say what you found, say what you are doing, and do it.
 
-An item under "Needs you" is a decision, and it arrived as a bare ask: no
-options, nothing priced, and the reader reaching it only after everything
-above. They cannot answer it without holding the whole report in their head.
+That item is a decision and arrived unpriced. Brief it where they meet it
+first, all five sections:
 
-Brief that item where they meet it first. All five sections, in this order:
+  Background / Current situation / Options (cost and buys each) /
+  Recommendation (one, named) / Cost of no action (in figures)
 
-  Background            what they need to know and do not
-  Current situation     what is true now, and why it forces a choice
-  Options               each with what it costs and what it buys
-  Recommendation        one course of action, named
-  Cost of no action     what happens if they do nothing, in figures
+The brief stands on its own. Draw background and situation from what you wrote
+above, compressed to a sentence or two each. Compressed is not omitted: the
+reader answers from the brief, not by scrolling up.
 
-THE BRIEF HAS TO STAND ON ITS OWN. An earlier version of this advice said the
-background was already written above and told you not to repeat it. That was
-wrong, and it produced briefs opening straight into a table of options with
-nothing to anchor them. The reader answers from the brief, not from the report
-above it, and asking them to carry context down the page is the exact load the
-form exists to remove.
-
-Draw the background and the situation from what you already wrote, compressed.
-One or two sentences each, naming the thing being decided and why the choice
-is live now. Compressed is not omitted.
-
-Two items means two briefs, or one with the choices numbered."""
+Two items means two briefs."""
 
 MOVE_IT = """{lead}
 
 FIRST, THE EXIT. If you would proceed the same way whatever the answer, do not
-ask. Say what you found, say what you are doing, and do it. Manufacturing
-alternatives so this shape can be filled in wastes the reader's attention on
-courses you had already rejected, and it asks them to re-derive a conclusion
-you had already reached. A real fork is two or more courses you would actually
-take, where the choice turns on something the reader knows and you do not.
+ask. Say what you found, say what you are doing, and do it.
 
-The ask sits {where:.0f} percent of the way in. To answer it the reader has to
-hold everything above it in their head, and nobody can.
-
-Everything needed to answer is already here. Move the ask to the top, ahead of
-the evidence, and leave the rest where it is.
-
-Moving it is enough. Nothing here asks for headings, and a short message whose
-ask comes first will not be sent back again."""
+The ask sits {where:.0f} percent of the way in. Move it to the top and leave the
+rest where it is. Moving it is enough; nothing here asks for headings."""
 
 ADVICE = """{lead}
 
 FIRST, THE EXIT. If you would proceed the same way whatever the answer, do not
-ask. Say what you found, say what you are doing, and do it. Manufacturing
-alternatives so this shape can be filled in wastes the reader's attention on
-courses you had already rejected, and it asks them to re-derive a conclusion
-you had already reached. A real fork is two or more courses you would actually
-take, where the choice turns on something the reader knows and you do not.
+ask. Say what you found, say what you are doing, and do it.
 
-This is about what the reader has to hold in their head, not about style. They
-should be able to answer you without remembering anything. Right now they have
-to carry the evidence forward and assemble the question themselves, and that is
-work you are doing to them rather than for them.
+They should be able to answer without holding anything in their head. Put the
+ask first, and under it only what they need to answer:
 
-So put the ask where they meet it first, and put underneath it only what they
-need to answer:
-
-  Background            what they need to know and do not
-  Current situation     what is true now, and why it forces a choice
-  Options               each with what it costs and what it buys
-  Recommendation        one course of action, named
-  Cost of no action     what happens if they do nothing, in figures
+  Background / Current situation / Options (cost and buys each) /
+  Recommendation (one, named) / Cost of no action (in figures)
 
 Missing here: {missing}.
 
-Cost of no action is the one that matters most. Doing nothing needs no
-decision, so it wins by default, and a request that does not price it has left
-out the outcome most likely to occur."""
+Cost of no action matters most: doing nothing needs no decision, so it wins by
+default."""
 
 
 def advice_for(text: str, lead: str) -> str:
