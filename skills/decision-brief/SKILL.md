@@ -71,6 +71,14 @@ Keep the table under 80 columns. Past that it wraps in a terminal, a chat pane, 
 
 **Cost of no action.** What happens between now and whenever they get to it. In numbers.
 
+## No coinage, and half the words
+
+Use only words that already exist, in the meaning they already have. Where a subject has its own vocabulary, use that and nothing else. If no existing word fits, describe the thing in a sentence rather than naming it.
+
+This bites hardest in Options. A course of action given a label the reader has to learn is a course they cannot weigh, and a table of coined names is a table of unknowns priced against each other.
+
+Then cut it in half. A brief is read by someone deciding, and every sentence they do not need is one they read before reaching the one they did. `clarity.py` gates announced coinage and measures nothing about length, so the deletion pass is yours.
+
 ## What the checker will not do for you
 
 Three things decide whether the brief is any good, and the checker reports all three as unassessed every single time:

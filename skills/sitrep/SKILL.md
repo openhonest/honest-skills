@@ -164,6 +164,35 @@ back to me."
 - If you need something the image does not show, ask one question. Do not
   speculate around the gap.
 
+## No coinage, and half the words
+
+**Use only words that already exist, in the meaning they already have.** Do not
+invent a term. Do not repurpose an ordinary word for a new sense and then define
+it. Do not build a label from two ordinary words and treat the pair as a term of
+art.
+
+Where a subject has its own vocabulary, use that and nothing else. Umbra says
+"unexercised input region." A session wrote "loose parameter," then "bare
+container," then "container," none of which were Umbra's. Each needed
+redefining, each redefinition was wrong, and the writing became impossible to
+follow. If no existing word fits, describe the thing in a sentence. A sentence
+the reader understands beats a coined noun they have to learn.
+
+`clarity.py` gates the announcement of a coinage and cannot see the coinage
+itself. "Bare container" is two ordinary words, and only someone who knows the
+vocabulary knows it stands for something else. The check catches you saying you
+are naming a thing; it cannot catch you naming one quietly.
+
+**Then cut the draft in half.** Whatever length it wants to be, that is twice
+what it should be. Delete the second explanation of a point already made, the
+table that restates the list above it, the measurement nobody asked for, and the
+plan offered before it was wanted.
+
+Nothing measures this. Half of what a draft wanted to be is not in the draft,
+and a word ceiling would gate brevity rather than value. The test is per
+sentence: does the reader need this to act? A report that survives its own
+deletion pass is the one worth sending.
+
 ## Length
 
 The report is not the work, and length is not evidence of effort. A one-line fix
