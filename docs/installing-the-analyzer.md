@@ -10,6 +10,20 @@ The `--python` flag is required and the reason is not obvious. Without it, uv pi
 
 Do not symlink the project's own console script onto PATH. It works, and it ties the installed tool to whatever branch that source tree happens to be on.
 
+## A fix in the analyzer needs a reinstall here
+
+`uv tool install` takes a snapshot, so the binary on PATH is frozen at install time and does not follow the source tree. That is the trade: a binary that tracked the tree would change under you whenever someone switched branches in it.
+
+The cost is that a fix to the analyzer does not reach this hook until you reinstall.
+
+```sh
+uv tool install --force --python 3.13 <path-to>/slop-audit/tools/l1_analyzer
+```
+
+This is not hypothetical. Two false positives were fixed in the analyzer and the hook kept reporting both, because the hook was running the snapshot. The author's own binary read the file clean while the hook did not, and only a reinstall reconciled them.
+
+A finding you believe is wrong has a second answer that needs no reinstall: a comment at the site naming the clause and the reason, `honest-code-allow: L1.21.4 - <reason>`. The reason is required and a bare suppression is not honoured. It is per site rather than per directory on purpose, because a directory-wide exemption blinds the check to a real instance added there later.
+
 ## What the hook cannot tell you
 
 A missing binary and a binary that rejects the flag both arrive as `NOT_RUN`, with nothing to separate them. That ambiguity hid a real defect for a week: L1.18 was being called with a file path it always refused, while the binary was also absent, and the two failures read identically. If the hook reports `NOT_RUN` and the binary is on your PATH, check what that binary actually supports.
