@@ -85,8 +85,15 @@ ANALYZER = "slop-audit-l1"
 
 # How many checks this hook has to offer. Reported on every finding, so the
 # reader learns the coverage at the same moment as the content. Three of the
-# Slop Audit's twenty indicators mean anything for one file at one moment.
-CHECKS = 3
+# Slop Audit's twenty indicators mean anything for one file at one moment, and
+# L1.21 is the fourth check: an indicator built for this path rather than
+# adapted to it.
+CHECKS = 4
+
+# A file with thirty violations produces a wall nobody reads. Show the first
+# few and say how many were held back, because a truncated list that does not
+# say it is truncated is the same lie as a findings list with no coverage.
+MAX_CLAUSE_FINDINGS = 5
 
 
 def hook_input(raw: str) -> str:
@@ -160,6 +167,60 @@ def analyzer_finding(path: str) -> dict | None:
             "caveat": "this threshold is provisional and was set by expert judgment"}
 
 
+def honest_code_finding(path: str) -> dict | None:
+    """L1.21, the Honest Code clauses, measured on this one file.
+
+    Delegated like L1.18 and for the same reason. It is the one indicator
+    designed for a single file: no git history, no CI, no test run, no
+    repository, no network. It parses the file and runs nineteen pure
+    functions over the tree.
+
+    The clause count is read from the response, never assumed. Some clauses
+    cannot be decided for a given language: two ask about a browser, one asks
+    how work was sequenced over weeks and no file carries that. A Python file
+    decided 14 of 19 when measured, which is not the number that was quoted to
+    me, so the field is the authority and the memory is not.
+    """
+    exe = shutil.which(ANALYZER)
+    if exe is None:
+        return {"indicator": "L1.21", "verdict": "NOT_RUN",
+                "detail": f"{ANALYZER} is not on PATH",
+                "action": "this file was not checked against the Honest Code clauses"}
+    try:
+        r = subprocess.run([exe, "--honest-code", path, "--format", "json"],
+                           capture_output=True, text=True, timeout=20)
+        data = json.loads(r.stdout)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return {"indicator": "L1.21", "verdict": "NOT_RUN",
+                "detail": "the analyzer ran and its output could not be read",
+                "action": "run it by hand on this file to see why"}
+
+    if data.get("unreadable_reason"):
+        # A file nobody could read is not a file with no violations.
+        return {"indicator": "L1.21", "verdict": "NOT_RUN",
+                "detail": f"could not read the file: {data['unreadable_reason']}",
+                "action": "nothing was checked, which is not the same as clean"}
+
+    clauses = data.get("clauses") or []
+    decided = data.get("decided_clauses")
+    hits = [f for c in clauses for f in (c.get("findings") or [])]
+    if not hits:
+        return None
+
+    shown = hits[:MAX_CLAUSE_FINDINGS]
+    lines = [f"{h.get('clause')} line {h.get('line')}: {h.get('detail')}"
+             for h in shown]
+    if len(hits) > len(shown):
+        lines.append(f"and {len(hits) - len(shown)} more, not shown")
+    return {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
+            "detail": f"{len(hits)} Honest Code finding(s), "
+                      f"{decided} of {len(clauses)} clauses decided; "
+                      + "; ".join(lines),
+            "action": shown[0].get("instead") or "see the clause detail",
+            "caveat": "these bands are expert judgment, not measured, and the "
+                      "clauses this file could not decide are outside the score"}
+
+
 def findings_for(path: str, text: str) -> list[dict]:
     """Every check's result, including the ones that did not run.
 
@@ -167,7 +228,8 @@ def findings_for(path: str, text: str) -> list[dict]:
     impossible to compute, and the count is the whole of the honesty.
     """
     return [f for f in (line_count_finding(text), whitespace_finding(text),
-                        analyzer_finding(path)) if f is not None]
+                        analyzer_finding(path), honest_code_finding(path))
+            if f is not None]
 
 
 def render(path: str, findings: list[dict]) -> str:

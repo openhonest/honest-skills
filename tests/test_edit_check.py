@@ -46,15 +46,24 @@ def run_hook(raw, monkeypatch):
 
 
 def no_analyzer(monkeypatch):
-    """The state of every fresh install: the plugin is there, the binary is not."""
+    """The state of every fresh install: the plugin is there, the binary is not.
+
+    Both delegated checks read the same binary, so absence takes out L1.18 and
+    L1.21 together."""
     monkeypatch.setattr(edit_check.shutil, "which", lambda n: None)
+
+
+def no_delegates(monkeypatch):
+    """Silence the two subprocess checks, for tests about the local two."""
+    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p: None)
+    monkeypatch.setattr(edit_check, "honest_code_finding", lambda p: None)
 
 
 # --- silence, which is the point --------------------------------------------
 
 def test_a_clean_file_produces_no_output_at_all(tmp_path, monkeypatch):
     f = tmp_path / "ok.py"; f.write_text(CLEAN)
-    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p: None)
+    no_delegates(monkeypatch)
     assert run_hook(payload(f), monkeypatch) == (0, "")
 
 
@@ -80,7 +89,7 @@ def test_exit_zero_is_the_silent_path(tmp_path, monkeypatch):
     """Exit 0 sends stdout to the debug log and shows it to nobody, so the
     hook must return 0 and print nothing rather than printing a tick."""
     f = tmp_path / "ok.py"; f.write_text(CLEAN)
-    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p: None)
+    no_delegates(monkeypatch)
     out = io.StringIO()
     monkeypatch.setattr(sys, "stdin", io.StringIO(payload(f)))
     with redirect_stdout(out):
@@ -127,7 +136,7 @@ def test_every_report_states_its_coverage_before_its_content(tmp_path, monkeypat
     no_analyzer(monkeypatch)
     f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
     first = run_hook(payload(f), monkeypatch)[1].splitlines()[0]
-    assert first == "honest-code: 2 of 3 checks ran on big.py"
+    assert first == "honest-code: 2 of 4 checks ran on big.py"
 
 
 def test_coverage_counts_checks_that_ran_not_findings_that_fired():
@@ -137,14 +146,14 @@ def test_coverage_counts_checks_that_ran_not_findings_that_fired():
         {"indicator": "L1.17", "verdict": "OUT_OF_SPEC", "detail": "d",
          "action": "a"},
         dict(NO_ANALYZER)])
-    assert out.splitlines()[0].startswith("honest-code: 2 of 3")
+    assert out.splitlines()[0].startswith("honest-code: 3 of 4")
 
 
-def test_full_coverage_says_three_of_three():
+def test_full_coverage_says_four_of_four():
     out = edit_check.render("a/big.py", [
         {"indicator": "L1.17", "verdict": "OUT_OF_SPEC", "detail": "d",
          "action": "a"}])
-    assert out.splitlines()[0].startswith("honest-code: 3 of 3")
+    assert out.splitlines()[0].startswith("honest-code: 4 of 4")
 
 
 def test_findings_for_keeps_the_checks_that_did_not_run(tmp_path, monkeypatch):
@@ -153,7 +162,8 @@ def test_findings_for_keeps_the_checks_that_did_not_run(tmp_path, monkeypatch):
     no_analyzer(monkeypatch)
     f = tmp_path / "ok.py"; f.write_text(CLEAN)
     got = edit_check.findings_for(str(f), CLEAN)
-    assert [g["verdict"] for g in got] == ["NOT_RUN"]
+    assert [g["verdict"] for g in got] == ["NOT_RUN", "NOT_RUN"]
+    assert {g["indicator"] for g in got} == {"L1.18", "L1.21"}
 
 
 def test_no_report_ever_claims_the_file_passed():
@@ -190,21 +200,21 @@ def test_every_report_opens_on_coverage_not_on_a_verdict():
 
 def test_an_over_long_file_surfaces_on_stderr_with_exit_2(tmp_path, monkeypatch):
     f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
-    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p: None)
+    no_delegates(monkeypatch)
     code, err = run_hook(payload(f), monkeypatch)
     assert code == 2 and "L1.17" in err and "1001 lines" in err
 
 
 def test_a_file_at_the_limit_is_silent(tmp_path, monkeypatch):
     f = tmp_path / "edge.py"; f.write_text("x = 1\n" * 1000)
-    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p: None)
+    no_delegates(monkeypatch)
     assert run_hook(payload(f), monkeypatch) == (0, "")
 
 
 def test_trailing_whitespace_over_the_band_surfaces(tmp_path, monkeypatch):
     lines = ["x = 1   "] * 10 + ["y = 2"] * 90
     f = tmp_path / "ws.py"; f.write_text("\n".join(lines) + "\n")
-    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p: None)
+    no_delegates(monkeypatch)
     code, err = run_hook(payload(f), monkeypatch)
     assert code == 2 and "L1.16" in err and "10.0%" in err
 
@@ -212,7 +222,7 @@ def test_trailing_whitespace_over_the_band_surfaces(tmp_path, monkeypatch):
 def test_trailing_whitespace_inside_the_band_is_silent(tmp_path, monkeypatch):
     lines = ["x = 1   "] * 2 + ["y = 2"] * 98
     f = tmp_path / "ws.py"; f.write_text("\n".join(lines) + "\n")
-    monkeypatch.setattr(edit_check, "analyzer_finding", lambda p: None)
+    no_delegates(monkeypatch)
     assert run_hook(payload(f), monkeypatch) == (0, "")
 
 
@@ -324,3 +334,109 @@ def test_the_caveat_is_rendered_when_present():
         "caveat": "this threshold is provisional"}])
     assert "note: this threshold is provisional" in out
     assert "b.py" in out and "a/b.py" not in out
+
+
+# --- L1.21, the Honest Code clauses -----------------------------------------
+
+def fake_honest(payload):
+    return lambda *a, **k: type("R", (), {"stdout": json.dumps(payload)})()
+
+
+def test_a_clean_file_produces_no_honest_code_finding(monkeypatch):
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
+    monkeypatch.setattr(edit_check.subprocess, "run", fake_honest(
+        {"clauses": [{"code": "L1.21.1", "decided": True, "findings": []}],
+         "decided_clauses": 1, "unreadable_reason": ""}))
+    assert edit_check.honest_code_finding("x.py") is None
+
+
+def test_a_violation_carries_its_clause_line_and_remedy(monkeypatch):
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
+    monkeypatch.setattr(edit_check.subprocess, "run", fake_honest(
+        {"clauses": [{"code": "L1.21.14", "decided": True, "findings": [
+            {"clause": "L1.21.14", "line": 5,
+             "detail": "`timeout=30` absorbs the caller's omission",
+             "instead": "make absence an explicit case of a bounded type"}]}],
+         "decided_clauses": 14, "unreadable_reason": ""}))
+    f = edit_check.honest_code_finding("x.py")
+    assert f["verdict"] == "OUT_OF_SPEC"
+    assert "L1.21.14" in f["detail"] and "line 5" in f["detail"]
+    assert "bounded type" in f["action"]
+
+
+def test_the_clause_coverage_is_read_not_assumed(monkeypatch):
+    """A Python file decided 14 of 19 when measured, which is not the number
+    that was quoted to me. The field is the authority and the memory is not."""
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
+    monkeypatch.setattr(edit_check.subprocess, "run", fake_honest(
+        {"clauses": [{"code": f"L1.21.{i}", "decided": i <= 14,
+                      "findings": [{"clause": "L1.21.1", "line": 1,
+                                    "detail": "d", "instead": "i"}] if i == 1 else []}
+                     for i in range(1, 20)],
+         "decided_clauses": 14, "unreadable_reason": ""}))
+    f = edit_check.honest_code_finding("x.py")
+    assert "14 of 19 clauses decided" in f["detail"]
+
+
+def test_an_unreadable_file_is_not_a_clean_file(monkeypatch):
+    """A file nobody could read is not a file with no violations."""
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
+    monkeypatch.setattr(edit_check.subprocess, "run", fake_honest(
+        {"clauses": [], "decided_clauses": 0,
+         "unreadable_reason": "SyntaxError: unexpected EOF"}))
+    f = edit_check.honest_code_finding("x.py")
+    assert f["verdict"] == "NOT_RUN"
+    assert "not the same as clean" in f["action"]
+
+
+def test_a_wall_of_findings_is_truncated_and_says_so(monkeypatch):
+    """A truncated list that does not say it is truncated is the same lie as a
+    findings list with no coverage."""
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
+    monkeypatch.setattr(edit_check.subprocess, "run", fake_honest(
+        {"clauses": [{"code": "L1.21.8", "decided": True, "findings": [
+            {"clause": "L1.21.8", "line": n, "detail": "d", "instead": "i"}
+            for n in range(30)]}],
+         "decided_clauses": 14, "unreadable_reason": ""}))
+    f = edit_check.honest_code_finding("x.py")
+    assert "30 Honest Code finding(s)" in f["detail"]
+    assert "and 25 more, not shown" in f["detail"]
+
+
+def test_the_provisional_caveat_is_carried(monkeypatch):
+    """The bands are expert judgment, not measured."""
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
+    monkeypatch.setattr(edit_check.subprocess, "run", fake_honest(
+        {"clauses": [{"code": "L1.21.8", "decided": True, "findings": [
+            {"clause": "L1.21.8", "line": 1, "detail": "d", "instead": "i"}]}],
+         "decided_clauses": 14, "unreadable_reason": ""}))
+    assert "expert judgment" in edit_check.honest_code_finding("x.py")["caveat"]
+
+
+def test_a_missing_analyzer_leaves_l1_21_not_run(monkeypatch):
+    no_analyzer(monkeypatch)
+    f = edit_check.honest_code_finding("x.py")
+    assert f["verdict"] == "NOT_RUN" and "not on PATH" in f["detail"]
+
+
+def test_an_unreadable_response_leaves_l1_21_not_run(monkeypatch):
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
+    monkeypatch.setattr(edit_check.subprocess, "run",
+                        lambda *a, **k: type("R", (), {"stdout": "not json"})())
+    assert edit_check.honest_code_finding("x.py")["verdict"] == "NOT_RUN"
+
+
+def test_an_analyzer_that_will_not_run_leaves_l1_21_not_run(monkeypatch):
+    def boom(*a, **k):
+        raise OSError("no")
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
+    monkeypatch.setattr(edit_check.subprocess, "run", boom)
+    assert edit_check.honest_code_finding("x.py")["verdict"] == "NOT_RUN"
+
+
+def test_the_hook_never_reimplements_the_honest_code_clauses():
+    """Nineteen clauses, one implementation. A second under the same name is
+    how two tools come to disagree while both claim the standard."""
+    src = (ROOT / "hooks" / "edit_check.py").read_text()
+    assert "--honest-code" in src
+    assert "import ast" not in src
