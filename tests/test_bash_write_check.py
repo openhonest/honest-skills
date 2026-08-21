@@ -141,3 +141,37 @@ def test_it_never_claims_the_command_caused_the_change():
     the docstring says so rather than leaving it to be assumed."""
     src = (ROOT / "hooks" / "bash_write_check.py").read_text()
     assert "cannot say the command caused the change" in src
+
+
+def test_the_same_findings_are_reported_once(tmp_path, monkeypatch):
+    """A file's mtime stays inside the window for two minutes, so every later
+    Bash call re-read it. One real session saw the identical block five times
+    while working on something else."""
+    monkeypatch.setattr(bw.edit_check, "honest_code_finding",
+                        lambda p: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
+                                   "detail": "d", "action": "a"})
+    (tmp_path / "x.py").write_text(DIRTY)
+    first = run_hook(payload(tmp_path), monkeypatch)
+    second = run_hook(payload(tmp_path), monkeypatch)
+    assert first[0] == 2 and second == (0, "")
+
+
+def test_a_changed_file_is_reported_again(tmp_path, monkeypatch):
+    """The key is the content, so a fix is reported on and an unchanged file is
+    not. Keying on the path alone would silence the file after one report."""
+    monkeypatch.setattr(bw.edit_check, "honest_code_finding",
+                        lambda p: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
+                                   "detail": "d", "action": "a"})
+    f = tmp_path / "x.py"
+    f.write_text(DIRTY)
+    assert run_hook(payload(tmp_path), monkeypatch)[0] == 2
+    f.write_text(DIRTY + "\n# a change\n")
+    assert run_hook(payload(tmp_path), monkeypatch)[0] == 2
+
+
+def test_an_unwritable_marker_suppresses_rather_than_repeats(monkeypatch):
+    def boom(*a, **k):
+        raise OSError("read-only")
+    monkeypatch.setattr(bw.Path, "exists", lambda self: False)
+    monkeypatch.setattr(bw.Path, "touch", boom)
+    assert bw.already_said("x.py", "text") is True

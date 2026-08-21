@@ -30,10 +30,12 @@ around it. That is weaker than the Write hook and it is what is available.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -47,6 +49,24 @@ WINDOW = 120.0
 
 # More than this many and it was a build, not an edit.
 TOO_MANY = 8
+
+# Say a given file's findings once, not on every command that follows.
+#
+# A file's mtime stays inside the window for two minutes, so every subsequent
+# Bash call re-read it and re-reported the same findings. One real session saw
+# the identical block five times while working on something else. The key is
+# the file's content, so a fix is reported on and an unchanged file is not.
+def already_said(path: str, text: str) -> bool:
+    key = hashlib.sha256(f"{path}\0{text}".encode()).hexdigest()[:32]
+    marker = Path(tempfile.gettempdir()) / f"honest-bash-{key}.said"
+    if marker.exists():
+        return True
+    try:
+        marker.touch()
+    except OSError:
+        return True          # cannot record it, so do not risk repeating it
+    return False
+
 
 # Directories that are never someone editing source.
 SKIP = {".git", "node_modules", ".venv", "venv", "__pycache__", "target",
@@ -98,8 +118,11 @@ def main() -> int:
         except OSError:
             continue
         findings = edit_check.findings_for(path, text)
-        if any(f["verdict"] != "NOT_RUN" for f in findings):
-            reports.append(edit_check.render(path, findings))
+        if not any(f["verdict"] != "NOT_RUN" for f in findings):
+            continue
+        if already_said(path, text):
+            continue
+        reports.append(edit_check.render(path, findings))
 
     trace("PostToolUse:bash", "fired" if reports else "declined",
           f"{len(written)} changed, {len(reports)} with findings")
