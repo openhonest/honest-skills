@@ -519,15 +519,26 @@ An item under "Needs you" is a decision, and it arrived as a bare ask: no
 options, nothing priced, and the reader reaching it only after everything
 above. They cannot answer it without holding the whole report in their head.
 
-Brief that item where they meet it first. It needs three things it does not
-have:
+Brief that item where they meet it first. All five sections, in this order:
 
+  Background            what they need to know and do not
+  Current situation     what is true now, and why it forces a choice
   Options               each with what it costs and what it buys
   Recommendation        one course of action, named
   Cost of no action     what happens if they do nothing, in figures
 
-Two items means two briefs, or one with the choices numbered. The background
-and the situation are already written above, so do not write them again."""
+THE BRIEF HAS TO STAND ON ITS OWN. An earlier version of this advice said the
+background was already written above and told you not to repeat it. That was
+wrong, and it produced briefs opening straight into a table of options with
+nothing to anchor them. The reader answers from the brief, not from the report
+above it, and asking them to carry context down the page is the exact load the
+form exists to remove.
+
+Draw the background and the situation from what you already wrote, compressed.
+One or two sentences each, naming the thing being decided and why the choice
+is live now. Compressed is not omitted.
+
+Two items means two briefs, or one with the choices numbered."""
 
 MOVE_IT = """{lead}
 

@@ -41,7 +41,8 @@ HEADING_LIMIT = 2
 # judge outright. Heading count and sentence length are judgement calls: a long
 # sentence can be right and a fourth heading can be earned, so they are reported
 # and do not fail the run. first_sentence is unassessable by construction.
-GATING = ("em_dashes", "hedges", "intensifiers", "tells", "ap_mechanics")
+GATING = ("em_dashes", "hedges", "intensifiers", "tells", "ap_mechanics",
+          "coinage")
 
 # Adverbs that assert a confidence the evidence has not earned. Named separately
 # from intensifiers because this group is a truthfulness problem, not a style
@@ -107,13 +108,40 @@ AP_MECHANICS = (
     r"\b(week-end|world-wide|nation-wide)\b",
 )
 
+# Coining a term, which is the act the no-coinage rule bans. Only the explicit
+# forms are matched: a writer announcing a name, or stipulating a private
+# meaning for an ordinary word. Whether a phrase is a coinage cannot be decided
+# from the text, but announcing one can.
+#
+# On 2026-08-21 a session wrote "loose parameter", then "bare container", then
+# "container", for a thing Umbra already calls an unexercised input region.
+# Each needed redefining and each redefinition was wrong.
+COINAGE = (
+    r"\bwhat I(?:'ll| will)? call\b",
+    r"\b(?:let'?s|let us|we'?ll|I'?ll) call (?:it|this|these|them)\b",
+    r"\bI(?:'m| am) calling (?:it|this|these|them)\b",
+    # "call it X" alone is ordinary English: "they call it PostgreSQL for a
+    # reason" is not a coinage. Only the first-person announcements above are.
+    r"\bfor want of a better (?:word|term)\b",
+    r"\bfor lack of a better (?:word|term)\b",
+    r"\bshall we say\b",
+    r"\bthe term I use\b",
+    r"\bcoin(?:ed|ing)? the (?:term|phrase|word)\b",
+    # Stipulating a private sense for an existing word.
+    r"\bby [\"\u201c]?\w+[\"\u201d]? I mean\b",
+    r"\b\w+ here means\b",
+    r"\bin the sense of [\"\u201c]",
+)
+
 WORD_CLASSES = (
     ("hedges", [rf"\b{h}\b" for h in HEDGES]),
     ("intensifiers", [rf"\b{i}\b" for i in INTENSIFIERS]),
     ("tells", list(TELLS)),
     ("ap_mechanics", list(AP_MECHANICS)),
+    ("coinage", list(COINAGE)),
 )
 LABELS = {"hedges": "HEDGES", "intensifiers": "INTENSIFIERS",
+          "coinage": "COINAGE",
           "tells": "AI TELLS", "ap_mechanics": "AP PUNCTUATION"}
 
 

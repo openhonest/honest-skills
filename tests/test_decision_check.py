@@ -595,7 +595,6 @@ def test_a_real_sitrep_is_told_to_brief_the_ask_not_to_rewrite_itself(tmp_path):
             "\n- Needs you: whether to commit this now.")
     _, message = stop(tmp_path, text)
     assert "This report is fine" in message
-    assert "do not write them again" in message
     assert "Missing here" not in message
     assert "Move the ask to the top" not in message
 
@@ -1056,3 +1055,21 @@ def test_the_narrowing_needs_a_subject_or_an_object():
     assert not dc.contradicts_a_ruling("A disagrees with B.")
     assert dc.contradicts_a_ruling("I disagree with A.")
     assert dc.contradicts_a_ruling("A disagrees with your call.")
+
+
+def test_the_needs_you_advice_asks_for_all_five_sections(tmp_path):
+    """It used to ask for three and say the background was already written
+    above. A session followed that literally and produced a brief opening
+    straight into a table of options, which was rejected for having no
+    background. The reader answers from the brief, not from the report."""
+    _, message = stop(tmp_path, "FINDINGS. Fine.\n- Needs you: whether to commit now.")
+    for section in ("Background", "Current situation", "Options",
+                    "Recommendation", "Cost of no action"):
+        assert section in message, section
+
+
+def test_it_no_longer_tells_you_to_omit_the_background(tmp_path):
+    _, message = stop(tmp_path, "FINDINGS. Fine.\n- Needs you: whether to commit now.")
+    assert "do not write them again" not in message
+    assert "STAND ON ITS OWN" in message
+    assert "Compressed is not omitted" in message

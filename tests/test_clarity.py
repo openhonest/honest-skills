@@ -274,7 +274,7 @@ def test_every_check_is_present_even_when_it_passes():
     from 'never ran'. That distinction is the whole point of the format."""
     checks = clarity.analyse(IN_BAND, "-")["checks"]
     expected = {"first_sentence", "headings", "long_sentences", "em_dashes",
-                "hedges", "intensifiers", "tells", "ap_mechanics"}
+                "hedges", "intensifiers", "tells", "ap_mechanics", "coinage"}
     assert set(checks) == expected
     assert all("verdict" in c for c in checks.values())
 
@@ -687,3 +687,38 @@ def test_notably_naming_an_instance_is_not_a_hedge(tmp_path):
     _, out = run("The anti-waterfall patterns of the late 1990s (notably XP and "
                  "Scrum) reshaped how teams organized their delivery work.", tmp_path)
     assert "HEDGES" not in out
+
+
+# --- coinage ----------------------------------------------------------------
+
+@pytest.mark.parametrize("text", [
+    "This is what I'll call a loose parameter, roughly.",
+    "Let us call it the bare container for now.",
+    'By "container" I mean the region no test reaches.',
+    "For want of a better word, a wrapper around the region.",
+    "I am calling this a bare container.",
+    "The term I use for it is a loose parameter.",
+])
+def test_announcing_a_coinage_fails(text):
+    """A session wrote "loose parameter", then "bare container", then
+    "container", for a thing Umbra already calls an unexercised input region.
+    Each needed redefining and each redefinition was wrong."""
+    assert "coinage" in clarity.analyse(text, "-")["gating_failures"]
+
+
+@pytest.mark.parametrize("text", [
+    "I will call the API twice and compare.",
+    "They call it PostgreSQL for a reason.",
+    "The unexercised input region is untested.",
+    "Call the function with the region as its argument.",
+])
+def test_ordinary_use_of_call_is_not_a_coinage(text):
+    """"call it X" is ordinary English. Only a first-person announcement of a
+    name, or a stipulated private sense, is the act being banned."""
+    assert "coinage" not in clarity.analyse(text, "-")["gating_failures"]
+
+
+def test_a_coinage_inside_a_code_span_is_a_mention():
+    """Writing about the rule has to be possible."""
+    assert "coinage" not in clarity.analyse(
+        'The checker matches `what I call`.', "-")["gating_failures"]
