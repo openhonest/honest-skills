@@ -361,3 +361,37 @@ def test_trailing_whitespace_over_the_band_surfaces(tmp_path, monkeypatch):
     no_delegates(monkeypatch)
     code, err = run_hook(payload(f), monkeypatch)
     assert code == 2 and "L1.16" in err and "10.0%" in err
+
+
+# --- evidence that it ran ---------------------------------------------------
+
+def test_a_clean_file_records_that_it_ran(tmp_path, monkeypatch):
+    """Silence alone cannot tell "ran and found nothing" from "never ran"."""
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    no_delegates(monkeypatch)
+    f = tmp_path / "ok.py"; f.write_text(CLEAN)
+    run_hook(payload(f), monkeypatch)
+    row = json.loads(log.read_text().splitlines()[-1])
+    assert row["verdict"] == "declined" and "3 of 3 ran" in row["why"]
+
+
+def test_a_firing_records_which_indicators_hit(tmp_path, monkeypatch):
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    no_delegates(monkeypatch)
+    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    run_hook(payload(f), monkeypatch)
+    row = json.loads(log.read_text().splitlines()[-1])
+    assert row["verdict"] == "fired" and "L1.17" in row["why"]
+
+
+def test_an_unchecked_extension_is_recorded_rather_than_silent(tmp_path, monkeypatch):
+    """The one place this hook's silence still cannot be told from a pass.
+    It cannot report on a file it does not check, so it records instead."""
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    f = tmp_path / "notes.md"; f.write_text("hello")
+    assert run_hook(payload(f), monkeypatch) == (0, "")
+    row = json.loads(log.read_text())
+    assert "not a checked extension: .md" in row["why"]

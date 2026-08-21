@@ -67,6 +67,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from trace_hook import trace  # noqa: E402
+
 # L1.17 at file scope. The published band is a percentage of files in a
 # repository, which is meaningless for one file. The question underneath it,
 # whether this file has grown past the point anyone reads it whole, is exactly
@@ -232,6 +235,8 @@ def render(path: str, findings: list[dict]) -> str:
 def main() -> int:
     path = hook_input(sys.stdin.read())
     if not path or Path(path).suffix.lower() not in SOURCE:
+        trace("PostToolUse:edit", "declined",
+              f"not a checked extension: {Path(path).suffix or 'none'}")
         return 0
     try:
         text = Path(path).read_text(errors="replace")
@@ -241,6 +246,11 @@ def main() -> int:
         return 0
 
     findings = findings_for(path, text)
+    ran = CHECKS - sum(1 for f in findings if f["verdict"] == "NOT_RUN")
+    hits = [f["indicator"] for f in findings if f["verdict"] != "NOT_RUN"]
+    trace("PostToolUse:edit", "fired" if hits else "declined",
+          f"{ran} of {CHECKS} ran, {Path(path).suffix or 'no suffix'}"
+          + (f", {','.join(hits)}" if hits else ""))
     if not any(f["verdict"] != "NOT_RUN" for f in findings):
         # Nothing surfaced. A check that did not run is not an observation
         # about this file, and announcing it here would put the tool's own
