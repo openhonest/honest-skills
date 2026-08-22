@@ -43,7 +43,7 @@ def render(rows: list[dict]) -> str:
     if not rows:
         return ("no trace found. Set HONEST_HOOK_TRACE to a file path, in the "
                 "env block of ~/.claude/settings.json, and restart.")
-    out = [f"{len(rows)} events"]
+    out = [f"{len(rows)} events", f"covering {span(rows)}"]
     for event in sorted({r["event"] for r in rows}):
         got = [r for r in rows if r["event"] == event]
         fired = sum(1 for r in got if r["verdict"] == "fired")
@@ -53,6 +53,54 @@ def render(rows: list[dict]) -> str:
             out.append(f"    fired    {n:>4}  {why[:66]}")
         for why, n in Counter(r["why"] for r in got if r["verdict"] != "fired").most_common(5):
             out.append(f"    declined {n:>4}  {why[:66]}")
+    return "\n".join(out)
+
+
+def span(rows: list[dict]) -> str:
+    """The period the rows cover, so a count can become a rate.
+
+    Rows written before 0.22.0 carry no timestamp and are excluded from this
+    rather than guessed at.
+    """
+    stamped = sorted(r["ts"] for r in rows if r.get("ts"))
+    if not stamped:
+        return "no timestamped rows: this trace predates 0.22.0"
+    if len(stamped) == 1:
+        return f"one timestamped row, at {stamped[0]}"
+    return f"{stamped[0]} to {stamped[-1]}, {len(stamped)} of {len(rows)} rows stamped"
+
+
+def settled(rows: list[dict]) -> str:
+    """What deferring bought, measured rather than asserted.
+
+    Three denominators, each named where it is used, because reporting a rate
+    without saying what it is a rate OF is how the same hook was described as
+    firing on 53 percent, 7.7 percent and 0.8 percent of runs in one afternoon.
+    """
+    out = ["", "WHAT DEFERRING BOUGHT"]
+    for kind in ("edit", "stub"):
+        held = [r for r in rows if r["event"] == f"PostToolUse:{kind}"
+                and r["verdict"] == "deferred"]
+        turns = [r for r in rows if r["event"] == f"Stop:{kind}"]
+        fired = [r for r in turns if r["verdict"] == "fired"]
+        repeats = [r for r in turns if "already reported" in r.get("why", "")]
+        if not held and not turns:
+            out.append(f"  {kind}: nothing yet")
+            continue
+        out.append(f"  {kind}: {len(held)} write(s) held, "
+                   f"{len(turns)} assessed at a turn end, {len(fired)} reported")
+        if turns:
+            out.append(f"       {len(fired) / len(turns) * 100:.0f}% of assessed "
+                       f"files had something to say (denominator: files assessed)")
+        if held and fired:
+            out.append(f"       {len(held) / len(fired):.1f} write(s) per report, "
+                       f"which is what the old shape reported separately")
+        if repeats:
+            out.append(f"       {len(repeats)} repeat(s) suppressed by the content guard")
+    bash = [r for r in rows if r["event"] == "PostToolUse:bash"]
+    if bash:
+        deferred = sum(1 for r in bash if r["verdict"] == "deferred")
+        out.append(f"  bash: {len(bash)} command(s) seen, {deferred} moved a source file")
     return "\n".join(out)
 
 
@@ -102,6 +150,7 @@ def main() -> int:
     rows = read(path)
     window = rows[-last:] if last else rows
     print(render(window))
+    print(settled(window))
     print(loop_closed(window))
     return 0
 
