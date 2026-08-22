@@ -59,9 +59,9 @@ reading what it did not examine.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
-import re
 import re
 import shutil
 import subprocess
@@ -69,7 +69,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from trace_hook import trace  # noqa: E402
+from pending import defer, read_state, session_key, write_state  # noqa: E402
+from trace_hook import stale_note, trace  # noqa: E402
 
 # L1.17 at file scope. The published band is a percentage of files in a
 # repository, which is meaningless for one file. The question underneath it,
@@ -105,6 +106,7 @@ ANALYZER = "slop-audit-l1"
 # L1.21 replaces it and is why audit called it the one indicator built for this
 # path rather than adapted to it.
 CHECKS = 3
+KIND = "edit"
 
 # A file with thirty violations produces a wall nobody reads. Show the first
 # few and say how many were held back, because a truncated list that does not
@@ -281,6 +283,9 @@ def render(path: str, findings: list[dict]) -> str:
     # smaller lie than over-reporting it and it is still a lie.
     not_run = sum(1 for f in findings if f["verdict"] == "NOT_RUN")
     lines = [f"honest-code: {CHECKS - not_run} of {CHECKS} checks ran on {name}"]
+    note = stale_note()
+    if note:
+        lines.append(f"  {note}")
     for f in findings:
         lines.append(f"  {f['verdict']}  {f['indicator']}  {f['detail']}")
         lines.append(f"      {f['action']}")
@@ -289,33 +294,88 @@ def render(path: str, findings: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def main() -> int:
-    path = hook_input(sys.stdin.read())
-    if not path or Path(path).suffix.lower() not in SOURCE:
-        trace("PostToolUse:edit", "declined",
-              f"not a checked extension: {Path(path).suffix or 'none'}")
-        return 0
+def assess(path: str) -> tuple[str, str] | None:
+    """The report for one settled file, with the content it describes.
+
+    Returns None when the file is gone, unreadable, or has nothing to say.
+    The content hash travels with the report so a finding the model chose not
+    to act on is not put a second time.
+    """
     try:
         text = Path(path).read_text(errors="replace")
     except OSError:
-        # The file is gone or unreadable. That is not a finding about the code,
-        # and a hook that reports it teaches the reader to ignore hooks.
-        return 0
-
+        # The file is gone or unreadable. That is not a finding about the
+        # code, and a hook that reports it teaches the reader to ignore hooks.
+        return None
     findings = findings_for(path, text)
+    # The coverage and the indicators are recorded here, per file, because
+    # this is where the checks actually run. Tracing only at the turn level
+    # would say a turn fired without saying on what or against how many
+    # checks, which is a count of events rather than a measurement.
     ran = CHECKS - sum(1 for f in findings if f["verdict"] == "NOT_RUN")
     hits = [f["indicator"] for f in findings if f["verdict"] != "NOT_RUN"]
-    trace("PostToolUse:edit", "fired" if hits else "declined",
+    trace("Stop:edit", "fired" if hits else "declined",
           f"{ran} of {CHECKS} ran, {Path(path).suffix or 'no suffix'}"
-          + (f", {','.join(hits)}" if hits else ""))
+          + (f", {','.join(hits)}" if hits else ""),
+          file=os.path.basename(path))
     if not any(f["verdict"] != "NOT_RUN" for f in findings):
         # Nothing surfaced. A check that did not run is not an observation
         # about this file, and announcing it here would put the tool's own
         # limitation where a finding about the code belongs.
-        return 0                      # silence: exit 0 shows stdout to nobody
+        return None
+    return render(path, findings), hashlib.sha256(text.encode()).hexdigest()
 
-    print(render(path, findings), file=sys.stderr)
-    return 2                          # exit 2 puts stderr in front of the model
+
+def settle(session: str) -> str:
+    """Assess every file this turn wrote, once each, at its final state.
+
+    Clears the pending list whether or not anything is reported, so a file
+    that was fixed before the turn ended leaves no residue for the next one.
+    """
+    state = read_state(KIND, session)
+    pending, reported = state["pending"], state["reported"]
+    reports = []
+    for path in pending:
+        got = assess(path)
+        if got is None:
+            reported.pop(path, None)
+            continue
+        report, digest = got
+        if reported.get(path) == digest:
+            # Same file, same content, same finding, already put to this
+            # session once. Repeating it cannot teach anything the first
+            # firing did not, and a Stop hook that repeats itself is a Stop
+            # hook that never lets the turn end.
+            trace("Stop:edit", "declined", "already reported this content",
+                  file=os.path.basename(path))
+            continue
+        reported[path] = digest
+        reports.append(report)
+    write_state(KIND, session, {"pending": [], "reported": reported})
+    return "\n".join(reports)
+
+
+def main() -> int:
+    raw = sys.stdin.read()
+    session = session_key(raw)
+    path = hook_input(raw)
+    if not path:
+        # No file path means this is the Stop firing, where the writes have
+        # settled and the assessment is finally about the file that exists.
+        report = settle(session)
+        if not report:
+            return 0
+        print(report, file=sys.stderr)
+        return 2                      # exit 2 puts stderr in front of the model
+    if Path(path).suffix.lower() not in SOURCE:
+        trace("PostToolUse:edit", "declined",
+              f"not a checked extension: {Path(path).suffix or 'none'}",
+              file=os.path.basename(path))
+        return 0
+    defer(KIND, path, session)
+    trace("PostToolUse:edit", "deferred", "held until the writes settle",
+          file=os.path.basename(path))
+    return 0                          # silence: the file may still be moving
 
 
 # Exercised by tests/test_edit_check.py, which runs this as Claude Code does.

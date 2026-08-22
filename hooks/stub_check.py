@@ -51,6 +51,7 @@ parsed answer from a matched one cannot weigh it.
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import os
 import re
@@ -58,6 +59,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from pending import defer, read_state, session_key, write_state  # noqa: E402
 from trace_hook import trace  # noqa: E402
 
 # A suggested wording, not a test. What this requires is that the function
@@ -69,6 +71,7 @@ from trace_hook import trace  # noqa: E402
 # useless: one correctly raising stub silenced every other stub in the same
 # file. Two silent functions went unreported behind one good one.
 MARKER = "CODE NOT WRITTEN"
+KIND = "stub"
 
 REMEDY = {
     ".py": f'raise NotImplementedError("{MARKER}")',
@@ -250,25 +253,69 @@ def render(path: str, how: str, stubs: list[tuple[int, str]]) -> str:
     return "\n".join(lines)
 
 
-def main() -> int:
-    try:
-        payload = json.loads(sys.stdin.read())
-        path = str((payload.get("tool_input") or {}).get("file_path") or "")
-    except (ValueError, TypeError, AttributeError):
-        return 0
-    if not path or Path(path).suffix.lower() not in REMEDY:
-        return 0
+def assess(path: str) -> tuple[str, str] | None:
+    """The report for one settled file, with the content it describes."""
     try:
         source = Path(path).read_text(errors="replace")
     except OSError:
-        return 0
+        return None
     how, stubs = findings_for(path, source)
-    trace("PostToolUse:stub", "fired" if stubs else "declined",
-          f"{how}, {len(stubs)} found")
+    trace("Stop:stub", "fired" if stubs else "declined",
+          f"{how}, {len(stubs)} found", file=os.path.basename(path))
     if not stubs:
+        return None
+    return (render(path, how, stubs),
+            hashlib.sha256(source.encode()).hexdigest())
+
+
+def settle(session: str) -> str:
+    """Assess every file this turn wrote, once each, at its final state.
+
+    A stub written and then filled in during the same turn is not a stub, and
+    reporting it was the same defect the edit hook had: PostToolUse fires once
+    per tool call, so the report described a state the next edit replaced.
+    """
+    state = read_state(KIND, session)
+    reported = state["reported"]
+    reports = []
+    for path in state["pending"]:
+        got = assess(path)
+        if got is None:
+            reported.pop(path, None)
+            continue
+        report, digest = got
+        if reported.get(path) == digest:
+            # Said once. A Stop hook that repeats itself is a Stop hook that
+            # never lets the turn end, and leaving the stub is the writer's
+            # call to make once they have been told.
+            continue
+        reported[path] = digest
+        reports.append(report)
+    write_state(KIND, session, {"pending": [], "reported": reported})
+    return "\n".join(reports)
+
+
+def main() -> int:
+    raw = sys.stdin.read()
+    session = session_key(raw)
+    try:
+        path = str((json.loads(raw).get("tool_input") or {}).get("file_path") or "")
+    except (ValueError, TypeError, AttributeError):
+        path = ""
+    if not path:
+        # No file path means this is the Stop firing, where the writes have
+        # settled and the assessment is finally about the file that exists.
+        report = settle(session)
+        if not report:
+            return 0
+        print(report, file=sys.stderr)
+        return 2
+    if Path(path).suffix.lower() not in REMEDY:
         return 0
-    print(render(path, how, stubs), file=sys.stderr)
-    return 2
+    defer(KIND, path, session)
+    trace("PostToolUse:stub", "deferred", "held until the writes settle",
+          file=os.path.basename(path))
+    return 0                          # silence: the file may still be moving
 
 
 # Exercised by tests/test_stub_check.py. In-process coverage cannot observe a

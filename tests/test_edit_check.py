@@ -13,6 +13,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import sys
 from contextlib import redirect_stdout
@@ -21,6 +22,14 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture(autouse=True)
+def _isolated_pending(tmp_path, monkeypatch):
+    """Each test gets its own pending state. Shared state would let one test's
+    deferred write surface inside the next test's Stop."""
+    monkeypatch.setenv("HONEST_PENDING_DIR", str(tmp_path / "pending"))
+    (tmp_path / "pending").mkdir(exist_ok=True)
 _spec = importlib.util.spec_from_file_location(
     "edit_check", ROOT / "hooks" / "edit_check.py")
 edit_check = importlib.util.module_from_spec(_spec)
@@ -37,12 +46,28 @@ def payload(path):
                        "tool_input": {"file_path": str(path)}})
 
 
-def run_hook(raw, monkeypatch):
-    """Run main() with stdin replaced, returning (exit_code, stderr)."""
+def _fire(raw, monkeypatch):
     err = io.StringIO()
     monkeypatch.setattr(sys, "stdin", io.StringIO(raw))
     monkeypatch.setattr(sys, "stderr", err)
     return edit_check.main(), err.getvalue()
+
+
+def run_hook(raw, monkeypatch):
+    """One write, then the Stop that settles it, as Claude Code runs them.
+
+    The write firing is silent by design since 0.22.0: it records the path and
+    waits, because a file edited three times in one turn was reported three
+    times, each report describing a state the next edit had already replaced.
+    What the caller wants asserted is the verdict on the settled file, so that
+    is what this returns.
+    """
+    _fire(raw, monkeypatch)
+    try:
+        session = json.loads(raw).get("session_id")
+    except (ValueError, TypeError, AttributeError):
+        session = None             # malformed input still gets its Stop
+    return _fire(json.dumps({"session_id": session}), monkeypatch)
 
 
 def no_analyzer(monkeypatch):
@@ -197,10 +222,14 @@ def test_the_hook_runs_as_a_subprocess_and_is_silent_on_a_clean_file(tmp_path):
     assert (p.returncode, p.stdout, p.stderr) == (0, "", "")
 
 
-def test_the_hook_runs_as_a_subprocess_and_exits_2_on_a_finding(tmp_path):
+def test_the_hook_runs_as_a_subprocess_and_exits_2_on_a_finding(tmp_path, monkeypatch):
+    monkeypatch.setenv("HONEST_PENDING_DIR", str(tmp_path / "pending"))
     f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
-    p = subprocess.run([sys.executable, str(ROOT / "hooks" / "edit_check.py")],
-                       input=payload(f), capture_output=True, text=True)
+    env = {**os.environ, "HONEST_PENDING_DIR": str(tmp_path / "pending")}
+    hook = [sys.executable, str(ROOT / "hooks" / "edit_check.py")]
+    subprocess.run(hook, input=payload(f), capture_output=True, text=True, env=env)
+    p = subprocess.run(hook, input=json.dumps({"session_id": "s1"}),
+                       capture_output=True, text=True, env=env)
     assert p.returncode == 2 and "L1.17" in p.stderr and p.stdout == ""
 
 
@@ -400,7 +429,7 @@ def test_an_unchecked_extension_is_recorded_rather_than_silent(tmp_path, monkeyp
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
     f = tmp_path / "notes.md"; f.write_text("hello")
     assert run_hook(payload(f), monkeypatch) == (0, "")
-    row = json.loads(log.read_text())
+    row = json.loads(log.read_text().splitlines()[0])
     assert "not a checked extension: .md" in row["why"]
 
 
@@ -518,3 +547,109 @@ def test_a_diff_that_errors_after_the_file_is_tracked_reports_everything(monkeyp
         return type("R", (), {"returncode": rc, "stdout": ""})()
     monkeypatch.setattr(edit_check.subprocess, "run", run)
     assert edit_check.changed_lines("x.py") is None
+
+
+# --- the settled file, not the file mid-edit --------------------------------
+
+def test_a_write_says_nothing_until_the_turn_ends(tmp_path, monkeypatch):
+    """The write firing is silent by construction. Adam reported on 2026-08-21
+    that the hook looked like it was assessing the file before the change; the
+    cause was PostToolUse firing once per tool call, so a file edited three
+    times produced three reports and the model read one describing content two
+    edits out of date."""
+    no_delegates(monkeypatch)
+    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    assert _fire(payload(f), monkeypatch) == (0, "")
+
+
+def test_a_violation_introduced_then_fixed_in_one_turn_is_never_reported(
+        tmp_path, monkeypatch):
+    """The whole reason for deferring. The turn's last word on the file is the
+    only one worth an opinion."""
+    no_delegates(monkeypatch)
+    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    _fire(payload(f), monkeypatch)
+    f.write_text(CLEAN)
+    _fire(payload(f), monkeypatch)
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch) == (0, "")
+
+
+def test_one_file_edited_twice_is_reported_once(tmp_path, monkeypatch):
+    no_delegates(monkeypatch)
+    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    _fire(payload(f), monkeypatch)
+    _fire(payload(f), monkeypatch)
+    code, err = _fire(json.dumps({"session_id": "s1"}), monkeypatch)
+    assert code == 2 and err.count("honest-code:") == 1
+
+
+def test_two_files_each_get_their_own_report(tmp_path, monkeypatch):
+    no_delegates(monkeypatch)
+    for name in ("a.py", "b.py"):
+        f = tmp_path / name; f.write_text("x = 1\n" * 1001)
+        _fire(payload(f), monkeypatch)
+    code, err = _fire(json.dumps({"session_id": "s1"}), monkeypatch)
+    assert code == 2 and err.count("honest-code:") == 2
+
+
+def test_the_same_finding_does_not_block_a_second_turn(tmp_path, monkeypatch):
+    """A Stop hook that repeats itself is a Stop hook that never lets the turn
+    end. Said once, then the choice not to act on it is the writer's."""
+    no_delegates(monkeypatch)
+    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    _fire(payload(f), monkeypatch)
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
+    _fire(payload(f), monkeypatch)
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch) == (0, "")
+
+
+def test_a_changed_file_is_reported_again(tmp_path, monkeypatch):
+    """The guard is on the content, not the path. Editing the file and leaving
+    a different violation is new news."""
+    no_delegates(monkeypatch)
+    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    _fire(payload(f), monkeypatch)
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
+    f.write_text("y = 2\n" * 1002)
+    _fire(payload(f), monkeypatch)
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
+
+
+def test_a_file_deleted_before_the_turn_ends_is_not_a_finding(
+        tmp_path, monkeypatch):
+    no_delegates(monkeypatch)
+    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    _fire(payload(f), monkeypatch)
+    f.unlink()
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch) == (0, "")
+
+
+def test_two_sessions_do_not_read_each_others_pending_writes(
+        tmp_path, monkeypatch):
+    no_delegates(monkeypatch)
+    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    _fire(json.dumps({"session_id": "one",
+                      "tool_input": {"file_path": str(f)}}), monkeypatch)
+    assert _fire(json.dumps({"session_id": "two"}), monkeypatch) == (0, "")
+    assert _fire(json.dumps({"session_id": "one"}), monkeypatch)[0] == 2
+
+
+def test_an_unwritable_state_directory_does_not_break_the_write(
+        tmp_path, monkeypatch):
+    """Scratch state must never be able to break the thing it serves."""
+    monkeypatch.setenv("HONEST_PENDING_DIR", "/dev/null/nope")
+    f = tmp_path / "ok.py"; f.write_text(CLEAN)
+    assert _fire(payload(f), monkeypatch) == (0, "")
+
+
+def test_a_stale_session_is_told_so_alongside_the_finding(tmp_path, monkeypatch):
+    """The note rides on output the hook was already producing. Staleness only
+    hurts when the hook fires, because the stale versions' defect is the noise
+    in exactly that output, and a version line on every clean write would be
+    the same noise by another name."""
+    monkeypatch.setattr(edit_check, "stale_note",
+                        lambda: "this session runs 0.13.1, 0.22.0 is installed.")
+    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    no_delegates(monkeypatch)
+    report = edit_check.render(str(f), edit_check.findings_for(str(f), f.read_text()))
+    assert "0.13.1" in report.splitlines()[1]

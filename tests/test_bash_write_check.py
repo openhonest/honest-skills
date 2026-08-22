@@ -20,14 +20,23 @@ _spec = importlib.util.spec_from_file_location(
     "bash_write_check", ROOT / "hooks" / "bash_write_check.py")
 bw = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(bw)
+_pspec = importlib.util.spec_from_file_location(
+    "pending", ROOT / "hooks" / "pending.py")
+pending = importlib.util.module_from_spec(_pspec)
+_pspec.loader.exec_module(pending)
 
 DIRTY = "def charge(card, timeout=30):\n    try:\n        pass\n    except Exception:\n        pass\n"
 CLEAN = "def add(a, b):\n    return a + b\n"
 
 
 def payload(cwd, tool="Bash"):
-    return json.dumps({"tool_name": tool, "cwd": str(cwd),
+    return json.dumps({"session_id": "s", "tool_name": tool, "cwd": str(cwd),
                        "tool_input": {"command": "echo hi"}})
+
+
+@pytest.fixture(autouse=True)
+def _isolated_pending(tmp_path, monkeypatch):
+    monkeypatch.setenv("HONEST_PENDING_DIR", str(tmp_path / "pending"))
 
 
 def run_hook(raw, monkeypatch):
@@ -80,13 +89,20 @@ def test_it_records_that_it_declined_on_a_build(tmp_path, monkeypatch):
     assert "reads as a build" in json.loads(log.read_text().splitlines()[-1])["why"]
 
 
-def test_a_dirty_file_surfaces_with_exit_2(tmp_path, monkeypatch):
+def test_a_dirty_file_written_by_a_script_surfaces_when_the_turn_ends(
+        tmp_path, monkeypatch):
+    """The whole path, end to end: a script writes the file, the Bash hook
+    holds the path, and the settle reports it. 30 percent of one session's
+    writes went through Bash and were invisible to the Write and Edit hooks."""
     (tmp_path / "x.py").write_text(DIRTY)
     monkeypatch.setattr(bw.edit_check, "honest_code_finding",
                         lambda p: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
                                    "detail": "d", "action": "a"})
-    code, err = run_hook(payload(tmp_path), monkeypatch)
-    assert code == 2 and "L1.21" in err
+    assert run_hook(payload(tmp_path), monkeypatch) == (0, "")
+    err = io.StringIO()
+    monkeypatch.setattr(sys, "stdin", io.StringIO('{"session_id": "s"}'))
+    monkeypatch.setattr(sys, "stderr", err)
+    assert bw.edit_check.main() == 2 and "L1.21" in err.getvalue()
 
 
 def test_a_clean_file_is_silent(tmp_path, monkeypatch):
@@ -143,35 +159,28 @@ def test_it_never_claims_the_command_caused_the_change():
     assert "cannot say the command caused the change" in src
 
 
-def test_the_same_findings_are_reported_once(tmp_path, monkeypatch):
-    """A file's mtime stays inside the window for two minutes, so every later
-    Bash call re-read it. One real session saw the identical block five times
-    while working on something else."""
-    monkeypatch.setattr(bw.edit_check, "honest_code_finding",
-                        lambda p: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
-                                   "detail": "d", "action": "a"})
+def test_a_bash_write_is_held_for_the_settle_rather_than_judged_here(
+        tmp_path, monkeypatch):
+    """It used to assess on the spot, which repeated a finding on every later
+    Bash call while the mtime stayed inside the window. One session saw the
+    identical block five times while working on something else. The paths now
+    go to the same settle the Write and Edit hooks feed."""
     (tmp_path / "x.py").write_text(DIRTY)
-    first = run_hook(payload(tmp_path), monkeypatch)
-    second = run_hook(payload(tmp_path), monkeypatch)
-    assert first[0] == 2 and second == (0, "")
+    assert run_hook(payload(tmp_path), monkeypatch) == (0, "")
+    state = pending.read_state("edit", "s")
+    assert state["pending"] == [str(tmp_path / "x.py")]
 
 
-def test_a_changed_file_is_reported_again(tmp_path, monkeypatch):
-    """The key is the content, so a fix is reported on and an unchanged file is
-    not. Keying on the path alone would silence the file after one report."""
-    monkeypatch.setattr(bw.edit_check, "honest_code_finding",
-                        lambda p: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
-                                   "detail": "d", "action": "a"})
-    f = tmp_path / "x.py"
-    f.write_text(DIRTY)
-    assert run_hook(payload(tmp_path), monkeypatch)[0] == 2
-    f.write_text(DIRTY + "\n# a change\n")
-    assert run_hook(payload(tmp_path), monkeypatch)[0] == 2
+def test_a_bash_write_also_reaches_the_stub_check(tmp_path, monkeypatch):
+    """The stub check only ever saw Write and Edit, so a file a script wrote
+    was never looked at for stubs at all."""
+    (tmp_path / "x.py").write_text(DIRTY)
+    run_hook(payload(tmp_path), monkeypatch)
+    assert pending.read_state("stub", "s")["pending"] == [str(tmp_path / "x.py")]
 
 
-def test_an_unwritable_marker_suppresses_rather_than_repeats(monkeypatch):
-    def boom(*a, **k):
-        raise OSError("read-only")
-    monkeypatch.setattr(bw.Path, "exists", lambda self: False)
-    monkeypatch.setattr(bw.Path, "touch", boom)
-    assert bw.already_said("x.py", "text") is True
+def test_a_build_is_still_refused_before_anything_is_held(tmp_path, monkeypatch):
+    for i in range(bw.TOO_MANY + 1):
+        (tmp_path / f"f{i}.py").write_text(CLEAN)
+    assert run_hook(payload(tmp_path), monkeypatch) == (0, "")
+    assert pending.read_state("edit", "s")["pending"] == []

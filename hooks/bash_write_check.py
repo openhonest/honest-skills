@@ -30,7 +30,6 @@ around it. That is weaker than the Write hook and it is what is available.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import subprocess
@@ -40,6 +39,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from pending import defer, session_key  # noqa: E402
 from trace_hook import trace  # noqa: E402
 import edit_check  # noqa: E402
 
@@ -56,19 +56,6 @@ TOO_MANY = 8
 # Bash call re-read it and re-reported the same findings. One real session saw
 # the identical block five times while working on something else. The key is
 # the file's content, so a fix is reported on and an unchanged file is not.
-def already_said(path: str, text: str) -> bool:
-    key = hashlib.sha256(f"{path}\0{text}".encode()).hexdigest()[:32]
-    marker = Path(tempfile.gettempdir()) / f"honest-bash-{key}.said"
-    if marker.exists():
-        return True
-    try:
-        marker.touch()
-    except OSError:
-        return True          # cannot record it, so do not risk repeating it
-    return False
-
-
-# Directories that are never someone editing source.
 SKIP = {".git", "node_modules", ".venv", "venv", "__pycache__", "target",
         "dist", "build", ".mypy_cache", ".pytest_cache", ".ruff_cache"}
 
@@ -94,8 +81,9 @@ def recently_written(root: str, window: float) -> list[str]:
 
 
 def main() -> int:
+    raw = sys.stdin.read()
     try:
-        payload = json.loads(sys.stdin.read())
+        payload = json.loads(raw)
     except (ValueError, TypeError):
         return 0
     if not isinstance(payload, dict) or payload.get("tool_name") != "Bash":
@@ -111,31 +99,19 @@ def main() -> int:
         trace("PostToolUse:bash", "declined", "no source file changed")
         return 0
 
-    reports, judged = [], {}
+    # Hand the paths to the same settle the Write and Edit hooks feed, rather
+    # than assessing here. Two things follow. A file a script writes and a
+    # later command fixes inside the same turn is judged once, at the state it
+    # ends in, which is the defect Adam reported on 2026-08-21. And a file
+    # written by a script now gets the stub check too, which only ever saw
+    # Write and Edit.
+    session = session_key(raw)
     for path in written:
-        try:
-            text = Path(path).read_text(errors="replace")
-        except OSError:
-            continue
-        findings = edit_check.findings_for(path, text)
-        hits = [f["indicator"] for f in findings if f["verdict"] != "NOT_RUN"]
-        # Recorded whether or not it is reported, so a file that fires once
-        # and comes back clean is visible as a fix rather than as silence.
-        judged[os.path.basename(path)] = hits
-        if not hits:
-            continue
-        if already_said(path, text):
-            continue
-        reports.append(edit_check.render(path, findings))
-
-    trace("PostToolUse:bash", "fired" if reports else "declined",
-          f"{len(written)} changed, {len(reports)} with findings",
-          files=[os.path.basename(p) for p in written] or None,
-          findings=judged or None)
-    if not reports:
-        return 0
-    print("\n".join(reports), file=sys.stderr)
-    return 2
+        defer("edit", path, session)
+        defer("stub", path, session)
+    trace("PostToolUse:bash", "deferred", f"{len(written)} held until they settle",
+          files=[os.path.basename(p) for p in written])
+    return 0                          # silence: the files may still be moving
 
 
 # Exercised by tests/test_bash_write_check.py.

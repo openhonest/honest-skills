@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -26,11 +27,33 @@ def payload(path):
     return json.dumps({"session_id": "s", "tool_input": {"file_path": str(path)}})
 
 
-def run_hook(raw, monkeypatch):
+@pytest.fixture(autouse=True)
+def _isolated_pending(tmp_path, monkeypatch):
+    """Each test gets its own pending state, or one test's deferred write
+    surfaces inside the next test's Stop."""
+    monkeypatch.setenv("HONEST_PENDING_DIR", str(tmp_path / "pending"))
+
+
+def _fire(raw, monkeypatch):
     err = io.StringIO()
     monkeypatch.setattr(sys, "stdin", io.StringIO(raw))
     monkeypatch.setattr(sys, "stderr", err)
     return sc.main(), err.getvalue()
+
+
+def run_hook(raw, monkeypatch):
+    """One write, then the Stop that settles it, as Claude Code runs them.
+
+    The write firing is silent by design since 0.22.0. A stub written and then
+    filled in during the same turn is not a stub, and reporting it was the same
+    defect the edit hook had.
+    """
+    _fire(raw, monkeypatch)
+    try:
+        session = json.loads(raw).get("session_id")
+    except (ValueError, TypeError, AttributeError):
+        session = None
+    return _fire(json.dumps({"session_id": session}), monkeypatch)
 
 
 # --- what a stub is ---------------------------------------------------------
@@ -261,8 +284,11 @@ def test_a_file_that_will_not_parse_is_silent(tmp_path, monkeypatch):
 
 def test_it_runs_as_a_subprocess_the_way_claude_code_does(tmp_path):
     f = tmp_path / "gw.py"; f.write_text("def charge(c, a):\n    pass\n")
-    p = subprocess.run([sys.executable, str(ROOT / "hooks" / "stub_check.py")],
-                       input=payload(f), capture_output=True, text=True)
+    env = {**os.environ, "HONEST_PENDING_DIR": str(tmp_path / "pending")}
+    hook = [sys.executable, str(ROOT / "hooks" / "stub_check.py")]
+    subprocess.run(hook, input=payload(f), capture_output=True, text=True, env=env)
+    p = subprocess.run(hook, input=json.dumps({"session_id": "s"}),
+                       capture_output=True, text=True, env=env)
     assert p.returncode == 2 and "SILENT_STUB" in p.stderr and p.stdout == ""
 
 
@@ -307,7 +333,7 @@ def test_a_clean_file_records_that_it_ran(tmp_path, monkeypatch):
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
     f = tmp_path / "gw.py"; f.write_text("def charge(c, a):\n    return c.debit(a)\n")
     run_hook(payload(f), monkeypatch)
-    row = json.loads(log.read_text())
+    row = json.loads(log.read_text().splitlines()[-1])
     assert row["verdict"] == "declined" and "parsed, 0 found" in row["why"]
 
 
@@ -316,7 +342,7 @@ def test_a_firing_records_how_it_decided(tmp_path, monkeypatch):
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
     f = tmp_path / "gw.js"; f.write_text("function charge(c){}")
     run_hook(payload(f), monkeypatch)
-    row = json.loads(log.read_text())
+    row = json.loads(log.read_text().splitlines()[-1])
     assert row["verdict"] == "fired" and "matched, 1 found" in row["why"]
 
 
@@ -388,3 +414,46 @@ def test_a_multi_item_with_is_searched_past_the_first():
            'def _(ctx):\n    with open(ctx["p"]) as fh, pytest.raises(ValueError):\n'
            '        go(fh)\n')
     assert sc.python_stubs(src) == []
+
+
+# --- the settled file, not the file mid-edit --------------------------------
+
+def test_a_write_says_nothing_until_the_turn_ends(tmp_path, monkeypatch):
+    f = tmp_path / "gw.py"; f.write_text("def charge(c, a):\n    pass\n")
+    assert _fire(payload(f), monkeypatch) == (0, "")
+
+
+def test_a_stub_filled_in_before_the_turn_ends_is_never_reported(
+        tmp_path, monkeypatch):
+    """Writing the signature first and the body second is how code gets
+    written. Reporting the intermediate state calls that a defect."""
+    f = tmp_path / "gw.py"; f.write_text("def charge(c, a):\n    pass\n")
+    _fire(payload(f), monkeypatch)
+    f.write_text("def charge(c, a):\n    return c.debit(a)\n")
+    _fire(payload(f), monkeypatch)
+    assert _fire(json.dumps({"session_id": "s"}), monkeypatch) == (0, "")
+
+
+def test_a_stub_left_standing_is_reported_once(tmp_path, monkeypatch):
+    f = tmp_path / "gw.py"; f.write_text("def charge(c, a):\n    pass\n")
+    _fire(payload(f), monkeypatch)
+    code, err = _fire(json.dumps({"session_id": "s"}), monkeypatch)
+    assert code == 2 and "SILENT_STUB" in err
+    _fire(payload(f), monkeypatch)
+    assert _fire(json.dumps({"session_id": "s"}), monkeypatch) == (0, "")
+
+
+def test_a_file_deleted_before_the_turn_ends_is_not_a_finding(
+        tmp_path, monkeypatch):
+    f = tmp_path / "gw.py"; f.write_text("def charge(c, a):\n    pass\n")
+    _fire(payload(f), monkeypatch)
+    f.unlink()
+    assert _fire(json.dumps({"session_id": "s"}), monkeypatch) == (0, "")
+
+
+def test_two_files_each_get_their_own_report(tmp_path, monkeypatch):
+    for name in ("a.py", "b.py"):
+        f = tmp_path / name; f.write_text("def charge(c, a):\n    pass\n")
+        _fire(payload(f), monkeypatch)
+    code, err = _fire(json.dumps({"session_id": "s"}), monkeypatch)
+    assert code == 2 and err.count("SILENT_STUB") == 2
