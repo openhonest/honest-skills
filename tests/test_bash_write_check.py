@@ -194,3 +194,40 @@ def test_the_trace_records_whole_paths_for_bash_writes(tmp_path, monkeypatch):
     run_hook(payload(tmp_path), monkeypatch)
     row = json.loads(log.read_text().splitlines()[-1])
     assert row["files"] == [str(tmp_path / "x.py")]
+
+
+# --- what moved since the last look, not in a fixed window -------------------
+
+def test_a_session_editing_the_same_files_is_not_read_as_a_build(
+        tmp_path, monkeypatch):
+    """A fixed window is cumulative. A session editing nine files over two
+    minutes has all nine inside a 120-second window at once, so every Bash call
+    it makes reads as a build and is discarded. That happened 31 times in one
+    37-minute trace, always at exactly nine files, and that session was getting
+    no coverage at all with nothing saying so."""
+    for i in range(9):
+        (tmp_path / f"f{i}.py").write_text(CLEAN)
+    assert run_hook(payload(tmp_path), monkeypatch) == (0, "")   # first look
+    held_first = len(pending.entries(pending.read_state("edit", "s")))
+    # The nine were edited over the preceding minutes, which is what put them
+    # all inside one fixed window and made the session look like a build.
+    old = time.time() - 90
+    for i in range(9):
+        os.utime(tmp_path / f"f{i}.py", (old, old))
+    (tmp_path / "f0.py").write_text(CLEAN + "# touched\n")       # one file moves
+    run_hook(payload(tmp_path), monkeypatch)
+    held = [e["path"] for e in pending.entries(pending.read_state("edit", "s"))]
+    assert held_first == 0                    # nine at once still reads as a build
+    assert held == [str(tmp_path / "f0.py")]  # one since the last look does not
+
+
+def test_the_first_look_of_a_session_uses_the_plain_window(tmp_path, monkeypatch):
+    """With nothing to compare against there is no since, and a session must
+    not start blind."""
+    assert bw.since_last_look("brand-new") == bw.WINDOW
+
+
+def test_the_second_look_measures_from_the_first(tmp_path, monkeypatch):
+    bw.since_last_look("s")
+    got = bw.since_last_look("s")
+    assert 1.0 <= got < bw.WINDOW

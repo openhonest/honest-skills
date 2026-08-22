@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from collections import Counter
 
@@ -98,22 +99,32 @@ def settled(rows: list[dict]) -> str:
     firing on 53 percent, 7.7 percent and 0.8 percent of runs in one afternoon.
     """
     out = ["", "WHAT DEFERRING BOUGHT"]
+    # A Bash deferral feeds both settles, so counting only the same-named
+    # event reported "0 write(s) held, 14 assessed", and the collapse ratio
+    # could never compute. Thirty percent of one session's writes went through
+    # Bash, so this is most of them.
+    from_bash = sum(int(m.group(1))
+                    for r in rows if r["event"] == "PostToolUse:bash"
+                    and r["verdict"] == "deferred"
+                    for m in [re.match(r"(\d+) held", r["why"])] if m)
     for kind in ("edit", "stub"):
         held = [r for r in rows if r["event"] == f"PostToolUse:{kind}"
                 and r["verdict"] == "deferred"]
         turns = [r for r in rows if r["event"] == f"Stop:{kind}"]
         fired = [r for r in turns if r["verdict"] == "fired"]
         repeats = [r for r in turns if "already reported" in r.get("why", "")]
-        if not held and not turns:
+        if not held and not from_bash and not turns:
             out.append(f"  {kind}: nothing yet")
             continue
-        out.append(f"  {kind}: {len(held)} write(s) held, "
+        total_held = len(held) + from_bash
+        out.append(f"  {kind}: {total_held} write(s) held "
+                   f"({len(held)} from an edit, {from_bash} from a script), "
                    f"{len(turns)} assessed at a turn end, {len(fired)} reported")
         if turns:
             out.append(f"       {len(fired) / len(turns) * 100:.0f}% of assessed "
                        f"files had something to say (denominator: files assessed)")
-        if held and fired:
-            out.append(f"       {len(held) / len(fired):.1f} write(s) per report, "
+        if total_held and fired:
+            out.append(f"       {total_held / len(fired):.1f} write(s) per report, "
                        f"which is what the old shape reported separately")
         if repeats:
             out.append(f"       {len(repeats)} repeat(s) suppressed by the content guard")

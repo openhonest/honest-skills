@@ -127,9 +127,11 @@ def read_state(kind: str, session: str) -> dict:
     # others. The early return for unreadable state was missing `said_of`
     # within a minute of the field being added.
     pending, reported, said = d.get("pending"), d.get("reported"), d.get("said_of")
+    look = d.get("last_look")
     return {"pending": pending if isinstance(pending, list) else [],
             "reported": reported if isinstance(reported, dict) else {},
-            "said_of": said if isinstance(said, list) else []}
+            "said_of": said if isinstance(said, list) else [],
+            "last_look": float(look) if isinstance(look, (int, float)) else 0.0}
 
 
 def write_state(kind: str, session: str, state: dict) -> None:

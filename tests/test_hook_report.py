@@ -242,3 +242,15 @@ def test_the_report_actually_applies_its_own_classifier(tmp_path, capsys):
     hook_report.main()
     out = capsys.readouterr().out
     assert "1 events" in out
+
+
+def test_writes_arriving_through_a_script_count_toward_the_ratio():
+    """A Bash deferral feeds both settles, so counting only the same-named
+    event reported "0 write(s) held, 14 assessed" and the ratio could never
+    compute. Thirty percent of one session's writes went through Bash."""
+    rows = [{"event": "PostToolUse:bash", "verdict": "deferred",
+             "why": "3 held until they settle"},
+            {"event": "Stop:edit", "verdict": "fired", "why": "x"}]
+    got = hook_report.settled(rows)
+    assert "3 write(s) held (0 from an edit, 3 from a script)" in got
+    assert "3.0 write(s) per report" in got

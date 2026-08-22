@@ -39,7 +39,8 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from pending import defer, session_key  # noqa: E402
+from pending import (defer, read_state, session_key,  # noqa: E402
+                     write_state)
 from trace_hook import trace  # noqa: E402
 import edit_check  # noqa: E402
 
@@ -58,6 +59,28 @@ TOO_MANY = 8
 # the file's content, so a fix is reported on and an unchanged file is not.
 SKIP = {".git", "node_modules", ".venv", "venv", "__pycache__", "target",
         "dist", "build", ".mypy_cache", ".pytest_cache", ".ruff_cache"}
+
+
+def since_last_look(session: str) -> float:
+    """Seconds since this session last ran this hook, capped at the window.
+
+    A fixed window is cumulative, and that is what broke it. A session editing
+    nine files over two minutes has all nine inside a 120-second window at
+    once, so every Bash call it makes reads as a build and is discarded. On
+    2026-08-21 that happened 31 times in one 37-minute trace, always at exactly
+    nine files, which is a working session and not a build: a build's count
+    varies. That session was getting no coverage at all and nothing said so.
+
+    Asking what moved since the last look separates the two. A build moves many
+    files between two adjacent calls; a session moves one or two.
+    """
+    state = read_state("bash", session)
+    last = state.get("last_look") or 0.0
+    state["last_look"] = time.time()
+    write_state("bash", session, state)
+    if not last:
+        return WINDOW
+    return max(1.0, min(WINDOW, time.time() - float(last)))
 
 
 def recently_written(root: str, window: float) -> list[str]:
@@ -90,7 +113,8 @@ def main() -> int:
         return 0
     root = str(payload.get("cwd") or os.getcwd())
 
-    written = recently_written(root, WINDOW)
+    session = session_key(raw)
+    written = recently_written(root, since_last_look(session))
     if len(written) > TOO_MANY:
         trace("PostToolUse:bash", "declined",
               f"{len(written)} files moved, reads as a build not an edit")
@@ -105,7 +129,6 @@ def main() -> int:
     # ends in, which is the defect Adam reported on 2026-08-21. And a file
     # written by a script now gets the stub check too, which only ever saw
     # Write and Edit.
-    session = session_key(raw)
     for path in written:
         defer("edit", path, session)
         defer("stub", path, session)

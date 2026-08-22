@@ -36,17 +36,17 @@ def test_a_session_id_cannot_escape_the_state_directory():
 def test_unreadable_state_is_treated_as_empty():
     pending.state_file("edit", "s").parent.mkdir(parents=True, exist_ok=True)
     pending.state_file("edit", "s").write_text("{not json")
-    assert pending.read_state("edit", "s") == {"pending": [], "reported": {}, "said_of": []}
+    assert pending.read_state("edit", "s") == {"pending": [], "reported": {}, "said_of": [], "last_look": 0.0}
 
 
 def test_absent_state_is_treated_as_empty():
-    assert pending.read_state("edit", "never") == {"pending": [], "reported": {}, "said_of": []}
+    assert pending.read_state("edit", "never") == {"pending": [], "reported": {}, "said_of": [], "last_look": 0.0}
 
 
 def test_state_of_the_wrong_shape_is_treated_as_empty():
     pending.state_file("edit", "s").parent.mkdir(parents=True, exist_ok=True)
     pending.state_file("edit", "s").write_text('{"pending": 3, "reported": "no"}')
-    assert pending.read_state("edit", "s") == {"pending": [], "reported": {}, "said_of": []}
+    assert pending.read_state("edit", "s") == {"pending": [], "reported": {}, "said_of": [], "last_look": 0.0}
 
 
 def test_a_path_deferred_twice_is_held_once():
@@ -69,7 +69,7 @@ def test_two_hooks_do_not_clear_each_others_pending_writes():
 def test_an_unwritable_state_directory_does_not_raise(monkeypatch):
     monkeypatch.setenv("HONEST_PENDING_DIR", "/dev/null/nope")
     pending.defer("edit", "/a.py", "s")        # must not raise
-    assert pending.read_state("edit", "s") == {"pending": [], "reported": {}, "said_of": []}
+    assert pending.read_state("edit", "s") == {"pending": [], "reported": {}, "said_of": [], "last_look": 0.0}
 
 
 # --- writes nothing is coming back for ---------------------------------------
