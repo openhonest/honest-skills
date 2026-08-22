@@ -167,8 +167,8 @@ def test_a_bash_write_is_held_for_the_settle_rather_than_judged_here(
     go to the same settle the Write and Edit hooks feed."""
     (tmp_path / "x.py").write_text(DIRTY)
     assert run_hook(payload(tmp_path), monkeypatch) == (0, "")
-    state = pending.read_state("edit", "s")
-    assert state["pending"] == [str(tmp_path / "x.py")]
+    held = pending.entries(pending.read_state("edit", "s"))
+    assert [e["path"] for e in held] == [str(tmp_path / "x.py")]
 
 
 def test_a_bash_write_also_reaches_the_stub_check(tmp_path, monkeypatch):
@@ -176,14 +176,15 @@ def test_a_bash_write_also_reaches_the_stub_check(tmp_path, monkeypatch):
     was never looked at for stubs at all."""
     (tmp_path / "x.py").write_text(DIRTY)
     run_hook(payload(tmp_path), monkeypatch)
-    assert pending.read_state("stub", "s")["pending"] == [str(tmp_path / "x.py")]
+    held = pending.entries(pending.read_state("stub", "s"))
+    assert [e["path"] for e in held] == [str(tmp_path / "x.py")]
 
 
 def test_a_build_is_still_refused_before_anything_is_held(tmp_path, monkeypatch):
     for i in range(bw.TOO_MANY + 1):
         (tmp_path / f"f{i}.py").write_text(CLEAN)
     assert run_hook(payload(tmp_path), monkeypatch) == (0, "")
-    assert pending.read_state("edit", "s")["pending"] == []
+    assert pending.entries(pending.read_state("edit", "s")) == []
 
 
 def test_the_trace_records_whole_paths_for_bash_writes(tmp_path, monkeypatch):

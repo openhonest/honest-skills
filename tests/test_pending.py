@@ -52,7 +52,8 @@ def test_state_of_the_wrong_shape_is_treated_as_empty():
 def test_a_path_deferred_twice_is_held_once():
     pending.defer("edit", "/a.py", "s")
     pending.defer("edit", "/a.py", "s")
-    assert pending.read_state("edit", "s")["pending"] == ["/a.py"]
+    held = pending.entries(pending.read_state("edit", "s"))
+    assert [e["path"] for e in held] == ["/a.py"]
 
 
 def test_two_hooks_do_not_clear_each_others_pending_writes():
@@ -61,10 +62,78 @@ def test_two_hooks_do_not_clear_each_others_pending_writes():
     pending.defer("edit", "/a.py", "s")
     pending.defer("stub", "/a.py", "s")
     pending.write_state("edit", "s", {"pending": [], "reported": {}})
-    assert pending.read_state("stub", "s")["pending"] == ["/a.py"]
+    held = pending.entries(pending.read_state("stub", "s"))
+    assert [e["path"] for e in held] == ["/a.py"]
 
 
 def test_an_unwritable_state_directory_does_not_raise(monkeypatch):
     monkeypatch.setenv("HONEST_PENDING_DIR", "/dev/null/nope")
     pending.defer("edit", "/a.py", "s")        # must not raise
     assert pending.read_state("edit", "s") == {"pending": [], "reported": {}}
+
+
+# --- writes nothing is coming back for ---------------------------------------
+
+def test_a_write_from_an_older_version_is_read_as_held_since_forever():
+    """0.22.0 and 0.23.0 wrote bare strings. Anything they stranded must drain
+    on the next write rather than sit in the file for good."""
+    pending.state_file("edit", "s").parent.mkdir(parents=True, exist_ok=True)
+    pending.state_file("edit", "s").write_text(
+        '{"pending": ["/a.py"], "reported": {}}')
+    assert pending.entries(pending.read_state("edit", "s")) == [
+        {"path": "/a.py", "at": 0.0}]
+
+
+def test_an_entry_of_the_wrong_shape_is_dropped_rather_than_raised_on():
+    pending.state_file("edit", "s").parent.mkdir(parents=True, exist_ok=True)
+    pending.state_file("edit", "s").write_text(
+        '{"pending": [3, {"at": 1}, {"path": "/ok.py"}], "reported": {}}')
+    assert [e["path"] for e in
+            pending.entries(pending.read_state("edit", "s"))] == ["/ok.py"]
+
+
+def test_a_write_just_made_is_not_stranded(tmp_path):
+    f = tmp_path / "a.py"; f.write_text("x = 1\n")
+    pending.defer("edit", str(f), "s")
+    assert pending.stranded("edit", "s") == []
+
+
+def test_a_write_held_past_the_wait_is_stranded(tmp_path, monkeypatch):
+    """The Stop hook is registered when a session starts. A session whose
+    registration predates the hook being added to Stop still runs the current
+    scripts, so it defers every write and settles none, and the hook goes
+    silently dead."""
+    f = tmp_path / "a.py"; f.write_text("x = 1\n")
+    import os, time
+    old = time.time() - pending.STALE_AFTER - 60
+    os.utime(f, (old, old))
+    pending.write_state("edit", "s", {"pending": [{"path": str(f), "at": old}],
+                                      "reported": {}})
+    assert pending.stranded("edit", "s") == [str(f)]
+
+
+def test_a_file_still_being_edited_is_not_stranded(tmp_path):
+    """The wait is only over when the file has stopped moving too. A long turn
+    that keeps touching one file is still a long turn."""
+    import time
+    f = tmp_path / "a.py"; f.write_text("x = 1\n")          # mtime is now
+    old = time.time() - pending.STALE_AFTER - 60
+    pending.write_state("edit", "s", {"pending": [{"path": str(f), "at": old}],
+                                      "reported": {}})
+    assert pending.stranded("edit", "s") == []
+
+
+def test_a_file_that_is_gone_is_not_stranded(tmp_path):
+    import time
+    old = time.time() - pending.STALE_AFTER - 60
+    pending.write_state("edit", "s", {"pending": [{"path": "/nope.py", "at": old}],
+                                      "reported": {}})
+    assert pending.stranded("edit", "s") == []
+
+
+def test_dropping_keeps_the_writes_that_are_still_waiting(tmp_path):
+    pending.defer("edit", "/a.py", "s")
+    pending.defer("edit", "/b.py", "s")
+    pending.drop("edit", "s", ["/a.py"])
+    assert [e["path"] for e in
+            pending.entries(pending.read_state("edit", "s"))] == ["/b.py"]

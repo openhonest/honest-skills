@@ -59,7 +59,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from pending import defer, read_state, session_key, write_state  # noqa: E402
+from pending import (defer, drop, entries, read_state,  # noqa: E402
+                     session_key, stranded, write_state)
 from trace_hook import trace  # noqa: E402
 
 # A suggested wording, not a test. What this requires is that the function
@@ -278,7 +279,7 @@ def settle(session: str) -> str:
     state = read_state(KIND, session)
     reported = state["reported"]
     reports = []
-    for path in state["pending"]:
+    for path in [e["path"] for e in entries(state)]:
         got = assess(path)
         if got is None:
             reported.pop(path, None)
@@ -312,6 +313,22 @@ def main() -> int:
         return 2
     if Path(path).suffix.lower() not in REMEDY:
         return 0
+    late = stranded(KIND, session)
+    if late:
+        # The Stop hook is not running in this session, so these were held and
+        # nothing came for them. Reporting late beats the hook going silently
+        # dead, and saying why beats reporting them as if this were normal.
+        reports = [r for r in (assess(p) for p in late) if r]
+        drop(KIND, session, late)
+        trace(f"PostToolUse:{KIND}", "fired",
+              f"{len(late)} write(s) held past the wait with no Stop firing")
+        if reports:
+            print(f"honest-code: the Stop hook is not running in this session, so "
+                  f"{len(late)} earlier write(s) were never assessed. Reporting "
+                  f"them now, late. Restart to fix the wiring.\n"
+                  + "\n".join(r[0] for r in reports), file=sys.stderr)
+            defer(KIND, path, session)
+            return 2
     defer(KIND, path, session)
     trace("PostToolUse:stub", "deferred", "held until the writes settle",
           file=path)

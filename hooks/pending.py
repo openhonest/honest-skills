@@ -19,7 +19,12 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
+
+# A write held longer than this, whose file has stopped moving, is not
+# waiting for a turn to end. Nothing is coming for it.
+STALE_AFTER = 600.0
 
 
 def session_key(raw: str) -> str:
@@ -49,6 +54,55 @@ def state_file(kind: str, session: str) -> Path:
     """
     base = os.environ.get("HONEST_PENDING_DIR") or os.path.expanduser("~/.claude")
     return Path(base) / f"honest-pending-{kind}-{session}.json"
+
+
+def entries(state: dict) -> list[dict]:
+    """The pending writes as {path, at} records.
+
+    A bare string is what 0.22.0 and 0.23.0 wrote. It is read as held since the
+    beginning of time, so anything stranded by those versions drains on the
+    next write rather than sitting forever.
+    """
+    out = []
+    for e in state["pending"]:
+        if isinstance(e, str):
+            out.append({"path": e, "at": 0.0})
+        elif isinstance(e, dict) and isinstance(e.get("path"), str):
+            out.append({"path": e["path"], "at": float(e.get("at") or 0.0)})
+    return out
+
+
+def stranded(kind: str, session: str) -> list[str]:
+    """Held writes that no Stop firing is going to come back for.
+
+    The Stop hook is registered when a session starts. A session whose
+    registration predates the hook being added to Stop still runs the current
+    scripts, so it defers every write and settles none of them, and the hook
+    goes silently dead. Silence from a hook that is working and silence from a
+    hook that is stranding everything are the same silence.
+
+    A file still being edited is excluded: the wait is only over when the file
+    has stopped moving too.
+    """
+    now = time.time()
+    late = []
+    for e in entries(read_state(kind, session)):
+        if now - e["at"] < STALE_AFTER:
+            continue
+        try:
+            if now - os.path.getmtime(e["path"]) < STALE_AFTER:
+                continue
+        except OSError:
+            continue
+        late.append(e["path"])
+    return late
+
+
+def drop(kind: str, session: str, paths: list[str]) -> None:
+    """Remove paths from the pending list, keeping the rest waiting."""
+    state = read_state(kind, session)
+    state["pending"] = [e for e in entries(state) if e["path"] not in paths]
+    write_state(kind, session, state)
 
 
 def read_state(kind: str, session: str) -> dict:
@@ -82,6 +136,8 @@ def write_state(kind: str, session: str, state: dict) -> None:
 def defer(kind: str, path: str, session: str) -> None:
     """Record the write and say nothing until the file stops moving."""
     state = read_state(kind, session)
-    if path not in state["pending"]:
-        state["pending"].append(path)
+    held = entries(state)
+    if not any(e["path"] == path for e in held):
+        held.append({"path": path, "at": time.time()})
+    state["pending"] = held
     write_state(kind, session, state)

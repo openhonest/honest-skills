@@ -691,3 +691,53 @@ def test_the_trace_records_the_whole_path_not_just_the_name(tmp_path, monkeypatc
     run_hook(payload(f), monkeypatch)
     files = [json.loads(l).get("file") for l in log.read_text().splitlines()]
     assert str(f) in files and "deep.py" not in files
+
+
+def test_a_session_whose_stop_never_runs_gets_told_rather_than_going_silent(
+        tmp_path, monkeypatch):
+    """The hook going silently dead is the failure this drain exists to stop.
+    Silence from a hook that is working and silence from a hook that is
+    stranding every write are the same silence."""
+    import os, time
+    no_delegates(monkeypatch)
+    old_file = tmp_path / "stranded.py"
+    old_file.write_text("x = 1\n" * 1001)
+    old = time.time() - 700
+    os.utime(old_file, (old, old))
+    edit_check.write_state("edit", "s1", {
+        "pending": [{"path": str(old_file), "at": old}], "reported": {}})
+    new = tmp_path / "fresh.py"; new.write_text(CLEAN)
+    code, err = _fire(payload(new), monkeypatch)
+    assert code == 2
+    assert "the Stop hook is not running in this session" in err
+    assert "stranded.py" in err and "L1.17" in err
+
+
+def test_the_drained_write_is_not_reported_a_second_time(tmp_path, monkeypatch):
+    import os, time
+    no_delegates(monkeypatch)
+    f = tmp_path / "stranded.py"; f.write_text("x = 1\n" * 1001)
+    old = time.time() - 700
+    os.utime(f, (old, old))
+    edit_check.write_state("edit", "s1", {
+        "pending": [{"path": str(f), "at": old}], "reported": {}})
+    other = tmp_path / "fresh.py"; other.write_text(CLEAN)
+    assert _fire(payload(other), monkeypatch)[0] == 2
+    assert _fire(payload(other), monkeypatch) == (0, "")
+
+
+def test_a_stranded_write_with_nothing_to_say_is_dropped_quietly(
+        tmp_path, monkeypatch):
+    """A held write that turned out clean is not news, and announcing the
+    wiring fault with no finding under it would be the tool reporting on
+    itself where a finding about the code belongs."""
+    import os, time
+    no_delegates(monkeypatch)
+    f = tmp_path / "clean.py"; f.write_text(CLEAN)
+    old = time.time() - 700
+    os.utime(f, (old, old))
+    edit_check.write_state("edit", "s1", {
+        "pending": [{"path": str(f), "at": old}], "reported": {}})
+    other = tmp_path / "fresh.py"; other.write_text(CLEAN)
+    assert _fire(payload(other), monkeypatch) == (0, "")
+    assert edit_check.stranded("edit", "s1") == []

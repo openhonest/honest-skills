@@ -457,3 +457,36 @@ def test_two_files_each_get_their_own_report(tmp_path, monkeypatch):
         _fire(payload(f), monkeypatch)
     code, err = _fire(json.dumps({"session_id": "s"}), monkeypatch)
     assert code == 2 and err.count("SILENT_STUB") == 2
+
+
+def test_a_session_whose_stop_never_runs_gets_told_rather_than_going_silent(
+        tmp_path, monkeypatch):
+    """Same drain as the edit hook, for the same reason: a session whose Stop
+    registration predates the hook being added there defers every write and
+    settles none, and the check goes silently dead."""
+    import os, time
+    f = tmp_path / "stranded.py"; f.write_text("def charge(c, a):\n    pass\n")
+    old = time.time() - 700
+    os.utime(f, (old, old))
+    sc.write_state("stub", "s", {"pending": [{"path": str(f), "at": old}],
+                                 "reported": {}})
+    other = tmp_path / "fresh.py"
+    other.write_text("def ok(c):\n    return c\n")
+    code, err = _fire(payload(other), monkeypatch)
+    assert code == 2
+    assert "the Stop hook is not running in this session" in err
+    assert "stranded.py" in err and "SILENT_STUB" in err
+
+
+def test_a_stranded_stub_that_was_filled_in_is_dropped_quietly(
+        tmp_path, monkeypatch):
+    import os, time
+    f = tmp_path / "filled.py"; f.write_text("def charge(c, a):\n    return c\n")
+    old = time.time() - 700
+    os.utime(f, (old, old))
+    sc.write_state("stub", "s", {"pending": [{"path": str(f), "at": old}],
+                                 "reported": {}})
+    other = tmp_path / "fresh.py"
+    other.write_text("def ok(c):\n    return c\n")
+    assert _fire(payload(other), monkeypatch) == (0, "")
+    assert sc.stranded("stub", "s") == []
