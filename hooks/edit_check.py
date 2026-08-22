@@ -128,6 +128,14 @@ def hook_input(raw: str) -> str:
     return str((d.get("tool_input") or {}).get("file_path") or "")
 
 
+# Findings that describe the whole file rather than the lines just written.
+# The content guard cannot hold these back: any edit changes the content, so
+# the guard sees new content and reports again. A file over the line limit
+# therefore said so on every single edit until it was split, which is the
+# nagging that gets a tool uninstalled. Said once per file per session instead.
+WHOLE_FILE = {"L1.17", "L1.16"}
+
+
 def line_count_finding(text: str) -> dict | None:
     n = len(text.splitlines())
     if n <= LINE_LIMIT:
@@ -396,19 +404,29 @@ def render(path: str, findings: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def said_before(session: str, key: str) -> bool:
+    """True the first time this session meets `key`, false after.
+
+    Backs both the once-per-language coverage notice and the once-per-file
+    whole-file findings. Kept in the pending state, so it lasts the session and
+    no longer.
+    """
+    state = read_state(KIND, session)
+    said = state.get("said_of") or []
+    if key in said:
+        return False
+    state["said_of"] = said + [key]
+    write_state(KIND, session, state)
+    return True
+
+
 def announce_once(session: str, suffix: str) -> bool:
     """True the first time this session meets a language the reader cannot read.
 
     Kept in the same state file as the pending writes, so it lasts the session
     and no longer.
     """
-    state = read_state(KIND, session)
-    said = state.get("said_of") or []
-    if suffix in said:
-        return False
-    state["said_of"] = said + [suffix]
-    write_state(KIND, session, state)
-    return True
+    return said_before(session, suffix)
 
 
 def assess(path: str, session: str = "") -> tuple[str, str] | None:
@@ -425,6 +443,12 @@ def assess(path: str, session: str = "") -> tuple[str, str] | None:
         # code, and a hook that reports it teaches the reader to ignore hooks.
         return None
     findings = findings_for(path, text)
+    # A whole-file finding the writer has already been told about in this
+    # session is dropped. It is still true, and repeating it on every edit
+    # teaches them to skim the whole report.
+    findings = [f for f in findings
+                if f["indicator"] not in WHOLE_FILE
+                or said_before(session, f"{f['indicator']}:{path}")]
     # The coverage and the indicators are recorded here, per file, because
     # this is where the checks actually run. Tracing only at the turn level
     # would say a turn fired without saying on what or against how many

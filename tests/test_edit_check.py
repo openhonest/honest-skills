@@ -606,12 +606,14 @@ def test_the_same_finding_does_not_block_a_second_turn(tmp_path, monkeypatch):
 
 def test_a_changed_file_is_reported_again(tmp_path, monkeypatch):
     """The guard is on the content, not the path. Editing the file and leaving
-    a different violation is new news."""
-    no_delegates(monkeypatch)
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    a different violation on the lines you touched is new news."""
+    monkeypatch.setattr(edit_check, "honest_code_finding",
+                        lambda p: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
+                                   "detail": "d", "action": "a"})
+    f = tmp_path / "a.py"; f.write_text(CLEAN)
     _fire(payload(f), monkeypatch)
     assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
-    f.write_text("y = 2\n" * 1002)
+    f.write_text(CLEAN + "# changed\n")
     _fire(payload(f), monkeypatch)
     assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
 
@@ -1096,3 +1098,67 @@ def test_a_suppression_outranks_a_finding_in_the_unit_state(tmp_path, monkeypatc
     row = next(json.loads(l) for l in log.read_text().splitlines()
                if json.loads(l).get("event") == "Stop:edit" and "unit" in json.loads(l))
     assert row["unit"] == "suppressed"
+
+
+# --- a whole-file finding is said once, not on every edit --------------------
+
+def test_a_file_over_the_line_limit_says_so_once_per_session(
+        tmp_path, monkeypatch):
+    """The content guard cannot hold this back: any edit changes the content,
+    so the guard sees new content and reports again. A 1526-line file in one
+    real session said it was too long on every edit, three times in twenty
+    minutes with six edits between each. That is the nagging that gets a tool
+    uninstalled."""
+    no_delegates(monkeypatch)
+    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    _fire(payload(f), monkeypatch)
+    code, err = _fire(json.dumps({"session_id": "s1"}), monkeypatch)
+    assert code == 2 and "L1.17" in err
+    f.write_text("x = 1\n" * 1100)          # edited again, still too long
+    _fire(payload(f), monkeypatch)
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch) == (0, "")
+
+
+def test_another_file_over_the_limit_is_still_reported(tmp_path, monkeypatch):
+    """Said once per file, not once per session. A second long file is news
+    about a different file."""
+    no_delegates(monkeypatch)
+    a = tmp_path / "a.py"; a.write_text("x = 1\n" * 1001)
+    _fire(payload(a), monkeypatch)
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
+    b = tmp_path / "b.py"; b.write_text("y = 2\n" * 1001)
+    _fire(payload(b), monkeypatch)
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
+
+
+def test_a_line_scoped_finding_still_repeats_on_new_content(
+        tmp_path, monkeypatch):
+    """Only whole-file findings are held back. A finding about the lines just
+    written is new news every time those lines change."""
+    monkeypatch.setattr(edit_check, "honest_code_finding",
+                        lambda p: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
+                                   "detail": "d", "action": "a"})
+    f = tmp_path / "a.py"; f.write_text(CLEAN)
+    _fire(payload(f), monkeypatch)
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
+    f.write_text(CLEAN + "# more\n")
+    _fire(payload(f), monkeypatch)
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
+
+
+def test_unchanged_content_is_not_reported_twice(tmp_path, monkeypatch):
+    """The content guard, reached with a line-scoped finding. Said once, then
+    the choice not to act on it is the writer's. A Stop hook that repeats
+    itself is a Stop hook that never lets the turn end."""
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    monkeypatch.setattr(edit_check, "honest_code_finding",
+                        lambda p: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
+                                   "detail": "d", "action": "a"})
+    f = tmp_path / "a.py"; f.write_text(CLEAN)
+    _fire(payload(f), monkeypatch)
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
+    _fire(payload(f), monkeypatch)                    # same content, untouched
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch) == (0, "")
+    assert any("already reported this content" in json.loads(l)["why"]
+               for l in log.read_text().splitlines())
