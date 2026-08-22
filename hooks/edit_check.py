@@ -66,6 +66,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -108,6 +109,11 @@ ANALYZER = "slop-audit-l1"
 # path rather than adapted to it.
 CHECKS = 4
 KIND = "edit"
+# How long a standing finding waits before it is raised again unprompted. An
+# agent that walks away from a file does not make its defect go away, and a
+# finding only re-checked when the file is touched can be escaped by never
+# touching it. Adam's rule: nag on a timer until the cause is verified gone.
+NAG_AFTER = 600.0
 
 # A file with thirty violations produces a wall nobody reads. Show the first
 # few and say how many were held back, because a truncated list that does not
@@ -404,6 +410,24 @@ def render(path: str, findings: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _with_repeat_count(finding: dict, path: str, session: str) -> dict:
+    """Mark a finding this session has already put about this file.
+
+    Counted per file and per indicator, so "still standing" is readable
+    without the reader holding the earlier reports in their head.
+    """
+    state = read_state(KIND, session)
+    seen = dict(state.get("told") or {})
+    key = f"{finding['indicator']}:{path}"
+    seen[key] = n = int(seen.get(key, 0)) + 1
+    state["told"] = seen
+    write_state(KIND, session, state)
+    if n == 1:
+        return finding
+    return {**finding,
+            "detail": f"{finding['detail']} [still standing, told {n} times]"}
+
+
 def said_before(session: str, key: str) -> bool:
     """True the first time this session meets `key`, false after.
 
@@ -443,12 +467,22 @@ def assess(path: str, session: str = "") -> tuple[str, str] | None:
         # code, and a hook that reports it teaches the reader to ignore hooks.
         return None
     findings = findings_for(path, text)
-    # A whole-file finding the writer has already been told about in this
-    # session is dropped. It is still true, and repeating it on every edit
-    # teaches them to skim the whole report.
-    findings = [f for f in findings
-                if f["indicator"] not in WHOLE_FILE
-                or said_before(session, f"{f['indicator']}:{path}")]
+    # An unresolved finding keeps being reported until it is resolved. It was
+    # briefly suppressed after the first telling, on the reasoning that
+    # repetition trains skimming. Adam overruled that and he was right twice
+    # over: an agent is not worn down the way a person is, and suppressing a
+    # finding that is still true makes an unresolved problem invisible, which
+    # is the failure this whole thing exists to prevent.
+    #
+    # What the earlier evidence actually showed was a session skimming a
+    # finding it had ALREADY FIXED, nine times, because of a stale binary.
+    # That is repetition of stale news and a different fault entirely.
+    #
+    # So the repeat carries its count instead of being dropped. A reader can
+    # then tell what is new in this report from what has been standing all
+    # session, which is what went wrong at 11:56 when a file was told the same
+    # two things after fixing one of them.
+    findings = [_with_repeat_count(f, path, session) for f in findings]
     # The coverage and the indicators are recorded here, per file, because
     # this is where the checks actually run. Tracing only at the turn level
     # would say a turn fired without saying on what or against how many
@@ -516,6 +550,30 @@ def assess(path: str, session: str = "") -> tuple[str, str] | None:
     return render(path, findings), hashlib.sha256(text.encode()).hexdigest()
 
 
+def standing(session: str) -> list[str]:
+    """Files with a finding outstanding, due to be raised again.
+
+    Verified rather than remembered. The caller re-assesses each one, so a
+    finding fixed while the agent worked elsewhere is dropped in silence and
+    never raised. Nothing is reported from memory.
+    """
+    book = read_state(KIND, session).get("standing") or {}
+    now = time.time()
+    return [p for p, at in book.items() if now - float(at or 0) >= NAG_AFTER]
+
+
+def note_standing(session: str, path: str, outstanding: bool) -> None:
+    """Open or close a file's entry in the standing book."""
+    state = read_state(KIND, session)
+    book = dict(state.get("standing") or {})
+    if outstanding:
+        book.setdefault(path, time.time())
+    else:
+        book.pop(path, None)
+    state["standing"] = book
+    write_state(KIND, session, state)
+
+
 def settle(session: str) -> str:
     """Assess every file this turn wrote, once each, at its final state.
 
@@ -534,7 +592,9 @@ def settle(session: str) -> str:
         got = assess(path, session)
         if got is None:
             reported.pop(path, None)
+            note_standing(session, path, False)   # clean now, stop nagging
             continue
+        note_standing(session, path, True)
         report, digest = got
         if reported.get(path) == digest:
             # Same file, same content, same finding, already put to this
@@ -550,8 +610,27 @@ def settle(session: str) -> str:
     # add to it while this loop runs, and writing back the value captured
     # before the loop put the stale one on disk, so a language announced
     # during a turn was announced again on the next one.
+    # Re-read rather than carried from the top: assess() writes to this state
+    # while the loop runs, and writing back the value captured before the loop
+    # put the stale one on disk. Every field added here has hit that once.
+    # Anything standing past the timer is re-checked here, even if this turn
+    # never touched it. An agent that walks away from a file does not make its
+    # defect go away, and a finding only re-checked on write can be escaped by
+    # never writing again.
+    for path in standing(session):
+        if path in looked_at:
+            continue
+        got = assess(path, session)
+        if got is None:
+            note_standing(session, path, False)
+            continue
+        reports.append(got[0])
+        note_standing(session, path, False)       # restart the clock
+        note_standing(session, path, True)
+    live = read_state(KIND, session)
     write_state(KIND, session, {"pending": [], "reported": reported,
-                                "said_of": read_state(KIND, session)["said_of"]})
+                                "said_of": live["said_of"], "told": live["told"],
+                                "standing": live.get("standing") or {}})
     return "\n".join(reports), len(looked_at)
 
 

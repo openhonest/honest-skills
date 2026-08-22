@@ -36,17 +36,17 @@ def test_a_session_id_cannot_escape_the_state_directory():
 def test_unreadable_state_is_treated_as_empty():
     pending.state_file("edit", "s").parent.mkdir(parents=True, exist_ok=True)
     pending.state_file("edit", "s").write_text("{not json")
-    assert pending.read_state("edit", "s") == {"pending": [], "reported": {}, "said_of": [], "last_look": 0.0}
+    assert pending.read_state("edit", "s") == {"pending": [], "reported": {}, "said_of": [], "last_look": 0.0, "told": {}, "standing": {}}
 
 
 def test_absent_state_is_treated_as_empty():
-    assert pending.read_state("edit", "never") == {"pending": [], "reported": {}, "said_of": [], "last_look": 0.0}
+    assert pending.read_state("edit", "never") == {"pending": [], "reported": {}, "said_of": [], "last_look": 0.0, "told": {}, "standing": {}}
 
 
 def test_state_of_the_wrong_shape_is_treated_as_empty():
     pending.state_file("edit", "s").parent.mkdir(parents=True, exist_ok=True)
     pending.state_file("edit", "s").write_text('{"pending": 3, "reported": "no"}')
-    assert pending.read_state("edit", "s") == {"pending": [], "reported": {}, "said_of": [], "last_look": 0.0}
+    assert pending.read_state("edit", "s") == {"pending": [], "reported": {}, "said_of": [], "last_look": 0.0, "told": {}, "standing": {}}
 
 
 def test_a_path_deferred_twice_is_held_once():
@@ -69,7 +69,7 @@ def test_two_hooks_do_not_clear_each_others_pending_writes():
 def test_an_unwritable_state_directory_does_not_raise(monkeypatch):
     monkeypatch.setenv("HONEST_PENDING_DIR", "/dev/null/nope")
     pending.defer("edit", "/a.py", "s")        # must not raise
-    assert pending.read_state("edit", "s") == {"pending": [], "reported": {}, "said_of": [], "last_look": 0.0}
+    assert pending.read_state("edit", "s") == {"pending": [], "reported": {}, "said_of": [], "last_look": 0.0, "told": {}, "standing": {}}
 
 
 # --- writes nothing is coming back for ---------------------------------------
@@ -165,3 +165,17 @@ def test_every_read_returns_the_same_keys(tmp_path, monkeypatch):
     keys = {frozenset(pending.read_state("edit", k))
             for k in ("never-written", "bad", "list", "good")}
     assert keys == {frozenset(absent)}
+
+
+def test_every_field_survives_a_settle(tmp_path, monkeypatch):
+    """Each field added to this state has been dropped once by a settle that
+    rebuilt the dict from scratch. The read must return them all and the write
+    must carry them all."""
+    pending.write_state("edit", "s", {"pending": [], "reported": {"a": "b"},
+                                      "said_of": [".js"], "told": {"L1.17:/x": 2},
+                                      "last_look": 1.0})
+    got = pending.read_state("edit", "s")
+    assert got["said_of"] == [".js"]
+    assert got["told"] == {"L1.17:/x": 2}
+    assert got["reported"] == {"a": "b"}
+    assert got["last_look"] == 1.0

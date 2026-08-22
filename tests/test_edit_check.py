@@ -1102,21 +1102,34 @@ def test_a_suppression_outranks_a_finding_in_the_unit_state(tmp_path, monkeypatc
 
 # --- a whole-file finding is said once, not on every edit --------------------
 
-def test_a_file_over_the_line_limit_says_so_once_per_session(
-        tmp_path, monkeypatch):
-    """The content guard cannot hold this back: any edit changes the content,
-    so the guard sees new content and reports again. A 1526-line file in one
-    real session said it was too long on every edit, three times in twenty
-    minutes with six edits between each. That is the nagging that gets a tool
-    uninstalled."""
+def test_a_standing_finding_keeps_being_reported(tmp_path, monkeypatch):
+    """An agent is not worn down the way a person is, and a finding that stops
+    being said stops being visible. Adam overruled the suppression that used to
+    live here: the file is still 1526 lines and the report should keep saying
+    so until it is not."""
     no_delegates(monkeypatch)
     f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
     _fire(payload(f), monkeypatch)
-    code, err = _fire(json.dumps({"session_id": "s1"}), monkeypatch)
-    assert code == 2 and "L1.17" in err
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
     f.write_text("x = 1\n" * 1100)          # edited again, still too long
     _fire(payload(f), monkeypatch)
-    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch) == (0, "")
+    code, err = _fire(json.dumps({"session_id": "s1"}), monkeypatch)
+    assert code == 2 and "L1.17" in err
+
+
+def test_a_repeat_says_how_long_it_has_been_standing(tmp_path, monkeypatch):
+    """The repeat carries its count so a reader can tell what is new in this
+    report from what has stood all session. A file that fixed one of its two
+    findings got a report that looked identical to the two before it."""
+    no_delegates(monkeypatch)
+    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    _fire(payload(f), monkeypatch)
+    _, first = _fire(json.dumps({"session_id": "s1"}), monkeypatch)
+    assert "still standing" not in first
+    f.write_text("x = 1\n" * 1100)
+    _fire(payload(f), monkeypatch)
+    _, second = _fire(json.dumps({"session_id": "s1"}), monkeypatch)
+    assert "still standing, told 2 times" in second
 
 
 def test_another_file_over_the_limit_is_still_reported(tmp_path, monkeypatch):
@@ -1162,3 +1175,87 @@ def test_unchanged_content_is_not_reported_twice(tmp_path, monkeypatch):
     assert _fire(json.dumps({"session_id": "s1"}), monkeypatch) == (0, "")
     assert any("already reported this content" in json.loads(l)["why"]
                for l in log.read_text().splitlines())
+
+
+# --- a standing finding is raised again on a timer ---------------------------
+
+def test_a_finding_is_raised_again_after_the_wait_even_with_no_new_write(
+        tmp_path, monkeypatch):
+    """An agent that walks away from a file does not make its defect go away.
+    A finding only re-checked when the file is written can be escaped by never
+    writing to it again."""
+    no_delegates(monkeypatch)
+    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    _fire(payload(f), monkeypatch)
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
+    # The agent moves on. Nothing touches big.py again.
+    state = edit_check.read_state("edit", "s1")
+    state["standing"] = {str(f): 0.0}          # the wait has elapsed
+    edit_check.write_state("edit", "s1", state)
+    other = tmp_path / "ok.py"; other.write_text(CLEAN)
+    _fire(payload(other), monkeypatch)
+    code, err = _fire(json.dumps({"session_id": "s1"}), monkeypatch)
+    assert code == 2 and "big.py" in err
+
+
+def test_a_finding_fixed_while_working_elsewhere_is_never_raised(
+        tmp_path, monkeypatch):
+    """Verified, not remembered. The file is re-assessed before anything is
+    said, so a fix made in passing closes the entry in silence."""
+    no_delegates(monkeypatch)
+    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    _fire(payload(f), monkeypatch)
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
+    f.write_text(CLEAN)                        # fixed, without the hook seeing it
+    state = edit_check.read_state("edit", "s1")
+    state["standing"] = {str(f): 0.0}
+    edit_check.write_state("edit", "s1", state)
+    other = tmp_path / "ok.py"; other.write_text(CLEAN)
+    _fire(payload(other), monkeypatch)
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch) == (0, "")
+    assert edit_check.read_state("edit", "s1")["standing"] == {}
+
+
+def test_the_wait_has_to_elapse_before_it_is_raised_again(
+        tmp_path, monkeypatch):
+    """Nagging on a timer, not on every turn. A finding raised again seconds
+    later is repetition without information."""
+    no_delegates(monkeypatch)
+    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    _fire(payload(f), monkeypatch)
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
+    other = tmp_path / "ok.py"; other.write_text(CLEAN)
+    _fire(payload(other), monkeypatch)
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch) == (0, "")
+
+
+def test_a_file_that_went_away_closes_its_entry(tmp_path, monkeypatch):
+    no_delegates(monkeypatch)
+    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    _fire(payload(f), monkeypatch)
+    _fire(json.dumps({"session_id": "s1"}), monkeypatch)
+    f.unlink()
+    state = edit_check.read_state("edit", "s1")
+    state["standing"] = {str(f): 0.0}
+    edit_check.write_state("edit", "s1", state)
+    other = tmp_path / "ok.py"; other.write_text(CLEAN)
+    _fire(payload(other), monkeypatch)
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch) == (0, "")
+    assert edit_check.read_state("edit", "s1")["standing"] == {}
+
+
+def test_a_standing_file_written_this_turn_is_not_raised_twice(
+        tmp_path, monkeypatch):
+    """The turn already assessed it, so raising it again from the standing
+    book would put the same finding in the same report twice."""
+    no_delegates(monkeypatch)
+    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    _fire(payload(f), monkeypatch)
+    assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
+    state = edit_check.read_state("edit", "s1")
+    state["standing"] = {str(f): 0.0}          # due, and written again below
+    edit_check.write_state("edit", "s1", state)
+    f.write_text("x = 1\n" * 1100)
+    _fire(payload(f), monkeypatch)
+    code, err = _fire(json.dumps({"session_id": "s1"}), monkeypatch)
+    assert code == 2 and err.count("honest-code:") == 1

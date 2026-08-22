@@ -301,8 +301,12 @@ def settle(session: str) -> str:
     # add to it while this loop runs, and writing back the value captured
     # before the loop put the stale one on disk, so a language announced
     # during a turn was announced again on the next one.
+    # Re-read rather than carried from the top: assess() writes to this state
+    # while the loop runs, and writing back the value captured before the loop
+    # put the stale one on disk. Every field added here has hit that once.
+    live = read_state(KIND, session)
     write_state(KIND, session, {"pending": [], "reported": reported,
-                                "said_of": read_state(KIND, session)["said_of"]})
+                                "said_of": live["said_of"], "told": live["told"]})
     return "\n".join(reports), len(looked_at)
 
 
