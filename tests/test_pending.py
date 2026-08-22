@@ -123,17 +123,23 @@ def test_a_file_still_being_edited_is_not_stranded(tmp_path):
     assert pending.stranded("edit", "s") == []
 
 
-def test_a_file_that_is_gone_is_not_stranded(tmp_path):
-    import time
-    old = time.time() - pending.STALE_AFTER - 60
-    pending.write_state("edit", "s", {"pending": [{"path": "/nope.py", "at": old}],
-                                      "reported": {}})
-    assert pending.stranded("edit", "s") == []
-
-
 def test_dropping_keeps_the_writes_that_are_still_waiting(tmp_path):
     pending.defer("edit", "/a.py", "s")
     pending.defer("edit", "/b.py", "s")
     pending.drop("edit", "s", ["/a.py"])
     assert [e["path"] for e in
             pending.entries(pending.read_state("edit", "s"))] == ["/b.py"]
+
+
+def test_a_pending_file_that_is_gone_drains_rather_than_sitting_forever():
+    """Skipping it meant only a Stop firing could remove it, so a session that
+    ended without one left the path in the file for good. Ten such paths were
+    sitting under the shared fallback key, which a live hook reads whenever no
+    session id is given."""
+    import time
+    old = time.time() - pending.STALE_AFTER - 60
+    pending.write_state("edit", "s", {"pending": [{"path": "/nope.py", "at": old}],
+                                      "reported": {}})
+    assert pending.stranded("edit", "s") == ["/nope.py"]
+    pending.drop("edit", "s", ["/nope.py"])
+    assert pending.entries(pending.read_state("edit", "s")) == []

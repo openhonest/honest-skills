@@ -93,6 +93,12 @@ def stranded(kind: str, session: str) -> list[str]:
             if now - os.path.getmtime(e["path"]) < STALE_AFTER:
                 continue
         except OSError:
+            # The file is gone. Nothing to assess and nothing to say, but the
+            # entry must still leave the list. Skipping it here meant only a
+            # Stop firing could ever remove it, so a session that ended without
+            # one left the path in the file for good. Assessing it returns
+            # nothing, so this drains quietly.
+            late.append(e["path"])
             continue
         late.append(e["path"])
     return late
