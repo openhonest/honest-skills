@@ -226,6 +226,32 @@ def coverage_gap(clauses: list[dict]) -> int:
                and c.get("undecided") != "never")
 
 
+def analyzer_says_all(paths: list[str]) -> dict[str, dict]:
+    """One analyzer run for every file in the turn, keyed by path.
+
+    The analysis itself costs nothing measurable: on a two-line file `--help`
+    and a real run both take 71ms, so the whole bill is starting the process.
+    Paid per file, a twenty-file turn spent about 2.6 seconds starting Python
+    twenty times to do twenty milliseconds of work.
+
+    A run that skipped a file it could not measure and reported the rest would
+    claim a coverage it did not have, so an absent entry is treated as no
+    result rather than as a clean one.
+    """
+    exe = shutil.which(ANALYZER)
+    if exe is None or not paths:
+        return {}
+    try:
+        r = subprocess.run([exe, "--honest-code", *paths, "--format", "json"],
+                           capture_output=True, text=True, timeout=60)
+        data = json.loads(r.stdout)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return {}
+    if isinstance(data, dict):
+        data = [data]
+    return {str(d.get("path")): d for d in data if isinstance(d, dict)}
+
+
 def analyzer_says(path: str) -> tuple[dict | None, dict | None]:
     """One run of the analyzer, parsed once.
 
@@ -357,16 +383,31 @@ def honest_code_finding(path: str, data: dict) -> dict | None:
                       "clauses this file could not decide are outside the score"}
 
 
-def findings_for(path: str, text: str) -> tuple[list[dict], dict]:
+def findings_for(path: str, text: str,
+                 said: dict | None = None) -> tuple[list[dict], dict]:
     """Every check's result, including the ones that did not run.
 
     Suppressing a NOT_RUN here would make the coverage count in render()
     impossible to compute, and the count is the whole of the honesty.
     """
-    data, failed = analyzer_says(path)
+    # `said` is this turn's single analyzer run, keyed by path. Absent, the
+    # analyzer is run for this file alone, which is what a caller outside a
+    # settle needs.
+    if said is None:
+        data, failed = analyzer_says(path)
+    else:
+        data = said.get(path)
+        failed = None if data else {
+            "indicator": "L1.21", "verdict": "NOT_RUN",
+            "detail": "the analyzer returned no result for this file",
+            "action": "nothing was checked, which is not the same as clean"}
     hc = failed if data is None else honest_code_finding(path, data)
+    # decided_clauses travels with the conformity, always. 92.9 per cent over
+    # nineteen readable clauses and 92.9 per cent over three are different
+    # facts, and the share alone cannot tell them apart.
     grade = {} if data is None else {"conformity": data.get("conformity"),
-                                     "band": data.get("band")}
+                                     "band": data.get("band"),
+                                     "decided": data.get("decided_clauses")}
     return ([f for f in (line_count_finding(text), whitespace_finding(text), hc)
              if f is not None], grade)
 
@@ -439,7 +480,8 @@ def announce_once(session: str, suffix: str) -> bool:
     return said_before(session, suffix)
 
 
-def assess(path: str, session: str = "") -> tuple[str, str] | None:
+def assess(path: str, session: str = "",
+           said: dict | None = None) -> tuple[str, str] | None:
     """The report for one settled file, with the content it describes.
 
     Returns None when the file is gone, unreadable, or has nothing to say.
@@ -452,7 +494,7 @@ def assess(path: str, session: str = "") -> tuple[str, str] | None:
         # The file is gone or unreadable. That is not a finding about the
         # code, and a hook that reports it teaches the reader to ignore hooks.
         return None
-    findings, grade = findings_for(path, text)
+    findings, grade = findings_for(path, text, said)
     # An unresolved finding keeps being reported until it is resolved. It was
     # briefly suppressed after the first telling, on the reasoning that
     # repetition trains skimming. Adam overruled that and he was right twice
@@ -513,7 +555,8 @@ def assess(path: str, session: str = "") -> tuple[str, str] | None:
           + (f", {','.join(hits)}" if hits else ""),
           file=path, unit=unit, checks_ran=ran, checks=CHECKS,
           clauses=clauses or None,
-          conformity=grade.get("conformity"), band=grade.get("band"))
+          conformity=grade.get("conformity"), band=grade.get("band"),
+          decided=grade.get("decided"))
     if not any(f["verdict"] != "NOT_RUN" for f in findings):
         # A coverage gap on THIS file is an observation about this file, unlike
         # a missing binary, which says nothing about it. A Python parser over a
@@ -574,9 +617,12 @@ def settle(session: str) -> str:
     state = read_state(KIND, session)
     reported = state["reported"]
     reports, looked_at = [], []
-    for path in [e["path"] for e in entries(state)]:
+    queued = [e["path"] for e in entries(state)]
+    said = analyzer_says_all([p for p in queued
+                             if Path(p).suffix.lower() in SOURCE])
+    for path in queued:
         looked_at.append(path)
-        got = assess(path, session)
+        got = assess(path, session, said)
         if got is None:
             reported.pop(path, None)
             note_standing(session, path, False)   # clean now, stop nagging

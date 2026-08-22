@@ -830,8 +830,11 @@ def test_the_coverage_gap_is_announced_once_per_language_per_session(
     unreadable = json.dumps({"clauses": [
         {"code": "L1.21.1", "decided": False, "undecided": "unreadable",
          "findings": []}], "decided_clauses": 0})
-    monkeypatch.setattr(edit_check.subprocess, "run",
-                        lambda *a, **k: type("R", (), {"stdout": unreadable})())
+    monkeypatch.setattr(
+        edit_check.subprocess, "run",
+        lambda *a, **k: type("R", (), {"stdout": json.dumps(
+            [{**json.loads(unreadable), "path": p}
+             for p in a[0][2:-2]])})())
     a = tmp_path / "a.js"; a.write_text("class A {}\n")
     b = tmp_path / "b.js"; b.write_text("class B {}\n")
     code, err = run_hook(payload(a), monkeypatch)
@@ -844,8 +847,11 @@ def test_a_second_language_is_announced_on_its_own(tmp_path, monkeypatch):
     unreadable = json.dumps({"clauses": [
         {"code": "L1.21.1", "decided": False, "undecided": "unreadable",
          "findings": []}], "decided_clauses": 0})
-    monkeypatch.setattr(edit_check.subprocess, "run",
-                        lambda *a, **k: type("R", (), {"stdout": unreadable})())
+    monkeypatch.setattr(
+        edit_check.subprocess, "run",
+        lambda *a, **k: type("R", (), {"stdout": json.dumps(
+            [{**json.loads(unreadable), "path": p}
+             for p in a[0][2:-2]])})())
     js = tmp_path / "a.js"; js.write_text("class A {}\n")
     rs = tmp_path / "a.rs"; rs.write_text("fn main() {}\n")
     assert run_hook(payload(js), monkeypatch)[0] == 2
@@ -859,8 +865,11 @@ def test_the_announcement_survives_the_turn_ending(tmp_path, monkeypatch):
     unreadable = json.dumps({"clauses": [
         {"code": "L1.21.1", "decided": False, "undecided": "unreadable",
          "findings": []}], "decided_clauses": 0})
-    monkeypatch.setattr(edit_check.subprocess, "run",
-                        lambda *a, **k: type("R", (), {"stdout": unreadable})())
+    monkeypatch.setattr(
+        edit_check.subprocess, "run",
+        lambda *a, **k: type("R", (), {"stdout": json.dumps(
+            [{**json.loads(unreadable), "path": p}
+             for p in a[0][2:-2]])})())
     a = tmp_path / "a.js"; a.write_text("class A {}\n")
     assert run_hook(payload(a), monkeypatch)[0] == 2
     b = tmp_path / "b.js"; b.write_text("class B {}\n")
@@ -1238,3 +1247,65 @@ def test_an_analyzer_that_does_not_report_declarations_reads_as_none(
     monkeypatch.setattr(edit_check, "changed_lines", lambda p: None)
     f = tmp_path / "a.py"; f.write_text(CLEAN)
     assert hc(str(f)) is None
+
+
+# --- one analyzer run for the whole turn --------------------------------------
+
+def test_the_turn_runs_the_analyzer_once_for_every_file(tmp_path, monkeypatch):
+    """The analysis costs nothing measurable: on a small file --help and a real
+    run both take 71ms, so the whole bill is starting the process. Paid per
+    file, a twenty-file turn spent 2.5 seconds starting Python twenty times to
+    do twenty milliseconds of work."""
+    runs = []
+    def spy(*a, **k):
+        runs.append(a[0])
+        paths = [x for x in a[0] if str(x).endswith(".py")]
+        return type("R", (), {"stdout": json.dumps(
+            [{"path": p, "clauses": [], "decided_clauses": 14,
+              "conformity": 100.0, "band": "Healthy"} for p in paths])})()
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/bin/true")
+    monkeypatch.setattr(edit_check.subprocess, "run", spy)
+    for i in range(5):
+        f = tmp_path / f"m{i}.py"; f.write_text(CLEAN)
+        _fire(payload(f), monkeypatch)
+    runs.clear()
+    _fire(json.dumps({"session_id": "s1"}), monkeypatch)
+    analyzer = [r for r in runs if "--honest-code" in r]
+    assert len(analyzer) == 1
+    assert sum(1 for x in analyzer[0] if str(x).endswith(".py")) == 5
+
+
+def test_a_file_the_batch_returned_nothing_for_is_not_called_clean(
+        tmp_path, monkeypatch):
+    """A run that skipped a file it could not measure and reported the rest
+    would claim a coverage it did not have."""
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/bin/true")
+    monkeypatch.setattr(edit_check.subprocess, "run",
+                        lambda *a, **k: type("R", (), {"stdout": "[]"})())
+    f = tmp_path / "m.py"; f.write_text(CLEAN)
+    _fire(payload(f), monkeypatch)
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    _fire(json.dumps({"session_id": "s1"}), monkeypatch)
+    row = next(json.loads(l) for l in log.read_text().splitlines()
+               if json.loads(l).get("event") == "Stop:edit" and "unit" in json.loads(l))
+    assert row["unit"] == "not_measured"
+
+
+def test_the_conformity_carries_how_many_clauses_could_be_read(
+        tmp_path, monkeypatch):
+    """92.9 per cent over nineteen readable clauses and 92.9 per cent over
+    three are different facts, and the share alone cannot tell them apart."""
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/bin/true")
+    monkeypatch.setattr(edit_check.subprocess, "run",
+                        lambda *a, **k: type("R", (), {"stdout": json.dumps(
+                            [{"path": p, "clauses": [], "decided_clauses": 3,
+                              "conformity": 92.9, "band": "Not Healthy"}
+                             for p in a[0] if str(p).endswith(".py")])})())
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    f = tmp_path / "m.py"; f.write_text(CLEAN)
+    run_hook(payload(f), monkeypatch)
+    row = next(json.loads(l) for l in log.read_text().splitlines()
+               if json.loads(l).get("event") == "Stop:edit" and "band" in json.loads(l))
+    assert row["decided"] == 3 and row["conformity"] == 92.9
