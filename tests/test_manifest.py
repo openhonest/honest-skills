@@ -23,3 +23,12 @@ def test_every_skill_the_manifest_lists_exists():
     missing = [s for s in MANIFEST["plugins"][0]["skills"]
                if not (root / s / "SKILL.md").exists()]
     assert missing == []
+
+
+def test_the_suite_cannot_write_to_the_live_trace(monkeypatch):
+    """The conftest override must be unconditional. Reading the environment
+    and only redirecting when it is set would leave the contaminated case
+    exactly as it was."""
+    import os
+    assert os.environ["HONEST_HOOK_TRACE"].endswith("trace.jsonl")
+    assert "pending" in os.environ["HONEST_PENDING_DIR"]
