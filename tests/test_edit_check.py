@@ -157,7 +157,7 @@ def test_every_report_states_its_coverage_before_its_content(tmp_path, monkeypat
     no_analyzer(monkeypatch)
     f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
     first = run_hook(payload(f), monkeypatch)[1].splitlines()[0]
-    assert first == "honest-code: 3 of 4 checks ran on big.py"
+    assert first == "honest-code: 2 of 3 checks ran on big.py"
 
 
 def test_coverage_counts_checks_that_ran_not_findings_that_fired():
@@ -167,14 +167,14 @@ def test_coverage_counts_checks_that_ran_not_findings_that_fired():
         {"indicator": "L1.17", "verdict": "OUT_OF_SPEC", "detail": "d",
          "action": "a"},
         dict(NO_ANALYZER)])
-    assert out.splitlines()[0].startswith("honest-code: 3 of 4")
+    assert out.splitlines()[0].startswith("honest-code: 2 of 3")
 
 
-def test_full_coverage_says_four_of_four():
+def test_full_coverage_says_three_of_three():
     out = edit_check.render("a/big.py", [
         {"indicator": "L1.17", "verdict": "OUT_OF_SPEC", "detail": "d",
          "action": "a"}])
-    assert out.splitlines()[0].startswith("honest-code: 4 of 4")
+    assert out.splitlines()[0].startswith("honest-code: 3 of 3")
 
 
 def test_findings_for_keeps_the_checks_that_did_not_run(tmp_path, monkeypatch):
@@ -409,7 +409,7 @@ def test_a_clean_file_records_that_it_ran(tmp_path, monkeypatch):
     f = tmp_path / "ok.py"; f.write_text(CLEAN)
     run_hook(payload(f), monkeypatch)
     rows = [json.loads(l) for l in log.read_text().splitlines()]
-    assert any(r["verdict"] == "declined" and "4 of 4 ran" in r["why"] for r in rows)
+    assert any(r["verdict"] == "declined" and "3 of 3 ran" in r["why"] for r in rows)
     assert any("none had anything to say" in r["why"] for r in rows)
 
 
@@ -932,66 +932,6 @@ def test_the_record_calls_a_suppression_neither_fired_nor_clean(
                if r["event"] == "Stop:edit")
 
 
-# --- an annotation added by this edit is not a fix ---------------------------
-
-def test_an_allow_comment_added_by_this_edit_is_reported(tmp_path, monkeypatch):
-    """One comment against a rewrite is the cheap route to a clean score. If
-    both pay the same, the score teaches the cheap one."""
-    monkeypatch.setattr(edit_check, "changed_lines", lambda p: None)
-    f = tmp_path / "a.py"
-    f.write_text("def f(x):\n    try:\n        return int(x)\n"
-                 "    except Exception:  # honest-code-allow: L1.21.8 - legacy\n"
-                 "        return None\n")
-    got = edit_check.annotation_finding(str(f), f.read_text())
-    assert got["verdict"] == "SUPPRESSED" and "line(s) 4" in got["detail"]
-
-
-@pytest.mark.parametrize("marker", [
-    "@boundary", "@boundary_in", "@boundary_out", "@edge", "@entrypoint",
-    "@entry_point", "@framework.boundary", "@boundary()"])
-def test_every_spelling_of_the_boundary_marker_counts(tmp_path, monkeypatch, marker):
-    monkeypatch.setattr(edit_check, "changed_lines", lambda p: None)
-    f = tmp_path / "a.py"
-    f.write_text(f"{marker}\ndef load(p):\n    return open(p).read()\n")
-    assert edit_check.annotation_finding(str(f), f.read_text()) is not None
-
-
-def test_an_annotation_already_in_the_file_is_left_alone(tmp_path, monkeypatch):
-    """A declaration that was already there is architecture. Only one written
-    in the same edit is the cheap route, and the boundary marker removed 21 of
-    28 findings on one real tree, so banning it outright brings that noise back."""
-    monkeypatch.setattr(edit_check, "changed_lines", lambda p: {9, 10})
-    f = tmp_path / "a.py"
-    f.write_text("@boundary\ndef load(p):\n    return open(p).read()\n")
-    assert edit_check.annotation_finding(str(f), f.read_text()) is None
-
-
-def test_a_file_restored_to_its_committed_state_reports_nothing(
-        tmp_path, monkeypatch):
-    monkeypatch.setattr(edit_check, "changed_lines", lambda p: set())
-    f = tmp_path / "a.py"
-    f.write_text("@boundary\ndef load(p):\n    return open(p).read()\n")
-    assert edit_check.annotation_finding(str(f), f.read_text()) is None
-
-
-def test_a_file_with_no_annotation_never_asks_git(tmp_path, monkeypatch):
-    """The common path must not pay for a check about the rare one."""
-    def boom(p):
-        raise AssertionError("changed_lines was called with nothing to place")
-    monkeypatch.setattr(edit_check, "changed_lines", boom)
-    f = tmp_path / "a.py"; f.write_text(CLEAN)
-    assert edit_check.annotation_finding(str(f), f.read_text()) is None
-
-
-def test_a_word_that_merely_mentions_boundary_is_not_a_declaration(
-        tmp_path, monkeypatch):
-    monkeypatch.setattr(edit_check, "changed_lines", lambda p: None)
-    f = tmp_path / "a.py"
-    f.write_text("# the boundary is elsewhere\nboundary = 3\n"
-                 "def f(x):\n    return x\n")
-    assert edit_check.annotation_finding(str(f), f.read_text()) is None
-
-
 def test_the_record_names_which_clause_fired(tmp_path, monkeypatch):
     """"L1.21 fired" says a rule was broken. The clause says which habit
     produced it, and that is the thing a series of writes can show moving."""
@@ -1084,19 +1024,20 @@ def test_a_silenced_check_makes_the_unit_suppressed_not_conforming(
     assert row["unit"] == "suppressed"
 
 
-def test_a_suppression_outranks_a_finding_in_the_unit_state(tmp_path, monkeypatch):
+def test_a_suppression_outranks_a_finding_in_the_unit_state(
+        tmp_path, monkeypatch):
     """Silencing is the fact worth surfacing: it is the cheap route, and a
     reader needs to see it was taken even when something else also fired."""
     log = tmp_path / "t.jsonl"
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
-    no_delegates(monkeypatch)
-    monkeypatch.setattr(edit_check, "annotation_finding",
-                        lambda p, s: {"indicator": "L1.21", "verdict": "SUPPRESSED",
-                                      "detail": "d", "action": "a"})
+    monkeypatch.setattr(edit_check, "honest_code_finding",
+                        lambda p: {"indicator": "L1.21", "verdict": "SUPPRESSED",
+                                   "detail": "1 silenced", "action": "a"})
     f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)   # also trips L1.17
     run_hook(payload(f), monkeypatch)
     row = next(json.loads(l) for l in log.read_text().splitlines()
-               if json.loads(l).get("event") == "Stop:edit" and "unit" in json.loads(l))
+               if json.loads(l).get("event") == "Stop:edit"
+               and "unit" in json.loads(l))
     assert row["unit"] == "suppressed"
 
 
@@ -1259,3 +1200,30 @@ def test_a_standing_file_written_this_turn_is_not_raised_twice(
     _fire(payload(f), monkeypatch)
     code, err = _fire(json.dumps({"session_id": "s1"}), monkeypatch)
     assert code == 2 and err.count("honest-code:") == 1
+
+
+def test_a_boundary_declaration_that_withheld_a_finding_counts(
+        tmp_path, monkeypatch):
+    """Reported by the analyzer rather than inferred from a decorator. Counting
+    markers found 62 that excused nothing on one package, and 10 of 11 on
+    another."""
+    _analyzer(monkeypatch, {"clauses": [
+        {"code": "L1.21.4", "decided": True, "findings": [],
+         "declared": [{"line": 12, "reason": "declared boundary withheld it"}]}],
+        "decided_clauses": 1})
+    monkeypatch.setattr(edit_check, "changed_lines", lambda p: None)
+    f = tmp_path / "a.py"; f.write_text(CLEAN)
+    got = edit_check.honest_code_finding(str(f))
+    assert got["verdict"] == "SUPPRESSED" and "line 12" in got["detail"]
+
+
+def test_an_analyzer_that_does_not_report_declarations_reads_as_none(
+        tmp_path, monkeypatch):
+    """The field is absent until audit's branch merges. Absent reads as zero,
+    which is honest: not "no declaration excused anything" but "nothing told me
+    one did"."""
+    _analyzer(monkeypatch, {"clauses": [
+        {"code": "L1.21.4", "decided": True, "findings": []}], "decided_clauses": 1})
+    monkeypatch.setattr(edit_check, "changed_lines", lambda p: None)
+    f = tmp_path / "a.py"; f.write_text(CLEAN)
+    assert edit_check.honest_code_finding(str(f)) is None

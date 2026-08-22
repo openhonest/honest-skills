@@ -107,8 +107,12 @@ ANALYZER = "slop-audit-l1"
 #
 # L1.21 replaces it and is why audit called it the one indicator built for this
 # path rather than adapted to it.
-CHECKS = 4
+CHECKS = 3
 KIND = "edit"
+# A suppression is now whatever the analyzer says was withheld, never a
+# decorator this hook spotted being added. Detecting the annotation counted 62
+# on one package that excused nothing, and 10 of 11 on another. A signal wrong
+# three times in four is worse than none when an honest source exists.
 # How long a standing finding waits before it is raised again unprompted. An
 # agent that walks away from a file does not make its defect go away, and a
 # finding only re-checked when the file is touched can be escaped by never
@@ -204,34 +208,6 @@ def changed_lines(path: str) -> set[int] | None:
     return lines or None
 
 
-# The two ways an edit can make a check go quiet without changing behaviour.
-# `honest-code-allow:` names a clause outright. A boundary decorator tells the
-# reader this function is an edge, which stops clause 4 asking why it does its
-# own I/O.
-ANNOTATION = re.compile(
-    r"honest-code-allow:\s*L1\.21\.\d+"
-    r"|@\s*(?:[\w.]+\.)?(?:boundary|boundary_in|boundary_out|edge|entrypoint|entry_point)\b")
-
-
-def annotations_added(path: str, text: str) -> list[int]:
-    """Lines this edit added that silence a check.
-
-    A declaration already in the file is architecture and is left alone. One
-    written in the same edit that would otherwise have reported is the cheap
-    route to a clean score: one comment against a rewrite. This does not prove
-    the annotation caused the silence, and it does not claim to. It reports
-    that the edit added one, which is the thing a reader should see.
-    """
-    lines = text.splitlines()
-    present = [n for n, line in enumerate(lines, 1) if ANNOTATION.search(line)]
-    if not present:
-        return []                 # nothing to place, so do not ask git
-    touched = changed_lines(path)
-    if touched == set():
-        return []                 # the file matches its committed version
-    return present if touched is None else [n for n in present if n in touched]
-
-
 def coverage_gap(clauses: list[dict]) -> int:
     """Undecided clauses that represent a failure to look, not a rule that
     does not apply.
@@ -292,7 +268,16 @@ def honest_code_finding(path: str) -> dict | None:
     # finding disappear was indistinguishable from writing conforming code.
     # Anything scoring an agent on conformance would have paid it the same
     # either way, and silencing is the cheaper of the two.
-    silenced = [a for c in clauses for a in (c.get("allowed") or [])]
+    # Both kinds of excuse, and only ones that actually withheld a finding.
+    # `allowed` is an allow comment naming a clause. `declared` is a boundary
+    # declaration, and it arrives only once audit's branch merges. Until then
+    # the field is absent and this reads as zero, which is the honest value:
+    # not "no declarations excused anything" but "nothing told me they did".
+    #
+    # This replaces counting markers, which counted 62 that excused nothing on
+    # one package and 10 of 11 on another.
+    silenced = [a for c in clauses
+                for a in (c.get("allowed") or []) + (c.get("declared") or [])]
     hits = [f for c in clauses for f in (c.get("findings") or [])]
     # Scoped only when there is something to scope. Asking git on every file
     # made the call unconditional, which is work nobody asked for on the
@@ -362,18 +347,6 @@ def honest_code_finding(path: str) -> dict | None:
                       "clauses this file could not decide are outside the score"}
 
 
-def annotation_finding(path: str, text: str) -> dict | None:
-    """An edit that added a silencer says so, whatever else it did."""
-    added = annotations_added(path, text)
-    if not added:
-        return None
-    return {"indicator": "L1.21", "verdict": "SUPPRESSED",
-            "detail": f"this edit added {len(added)} annotation(s) that silence "
-                      f"a check, at line(s) {', '.join(map(str, added[:4]))}",
-            "action": "an annotation is not a fix, and does not count as "
-                      "conforming code"}
-
-
 def findings_for(path: str, text: str) -> list[dict]:
     """Every check's result, including the ones that did not run.
 
@@ -381,7 +354,6 @@ def findings_for(path: str, text: str) -> list[dict]:
     impossible to compute, and the count is the whole of the honesty.
     """
     return [f for f in (line_count_finding(text), whitespace_finding(text),
-                        annotation_finding(path, text),
                         honest_code_finding(path)) if f is not None]
 
 
