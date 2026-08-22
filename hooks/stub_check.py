@@ -297,7 +297,12 @@ def settle(session: str) -> str:
             continue
         reported[path] = digest
         reports.append(report)
-    write_state(KIND, session, {"pending": [], "reported": reported})
+    # said_of is re-read here rather than carried from the top. assess() can
+    # add to it while this loop runs, and writing back the value captured
+    # before the loop put the stale one on disk, so a language announced
+    # during a turn was announced again on the next one.
+    write_state(KIND, session, {"pending": [], "reported": reported,
+                                "said_of": read_state(KIND, session)["said_of"]})
     return "\n".join(reports), len(looked_at)
 
 

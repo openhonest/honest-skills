@@ -246,6 +246,17 @@ def honest_code_finding(path: str) -> dict | None:
     decided = data.get("decided_clauses")
     gaps = coverage_gap(clauses)
     hits = [f for c in clauses for f in (c.get("findings") or [])]
+    if not hits and gaps:
+        # No findings and a coverage gap is not a clean file, it is a file the
+        # reader could not read. A Python parser over a JavaScript file returns
+        # an empty tree, and every clause that walks the tree finds nothing in
+        # it and counts as holding. Staying silent here publishes that as a
+        # pass. Adam's hook checks fifteen non-Python extensions.
+        return {"indicator": "L1.21", "verdict": "NOT_RUN",
+                "detail": f"{gaps} of {len(clauses)} clauses could not read this "
+                          f"file, and {decided} were decided",
+                "action": "the clauses that could not be read are unchecked, "
+                          "which is not the same as clean"}
     if not hits:
         return None
 
@@ -316,7 +327,22 @@ def render(path: str, findings: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def assess(path: str) -> tuple[str, str] | None:
+def announce_once(session: str, suffix: str) -> bool:
+    """True the first time this session meets a language the reader cannot read.
+
+    Kept in the same state file as the pending writes, so it lasts the session
+    and no longer.
+    """
+    state = read_state(KIND, session)
+    said = state.get("said_of") or []
+    if suffix in said:
+        return False
+    state["said_of"] = said + [suffix]
+    write_state(KIND, session, state)
+    return True
+
+
+def assess(path: str, session: str = "") -> tuple[str, str] | None:
     """The report for one settled file, with the content it describes.
 
     Returns None when the file is gone, unreadable, or has nothing to say.
@@ -341,6 +367,21 @@ def assess(path: str) -> tuple[str, str] | None:
           + (f", {','.join(hits)}" if hits else ""),
           file=path)
     if not any(f["verdict"] != "NOT_RUN" for f in findings):
+        # A coverage gap on THIS file is an observation about this file, unlike
+        # a missing binary, which says nothing about it. A Python parser over a
+        # JavaScript file returns an empty tree, every clause that walks the
+        # tree finds nothing in it and counts as holding, and silence here
+        # publishes that as a pass. Fifteen of the extensions this hook checks
+        # are not Python.
+        #
+        # Said once per language per session: never is a false clean bill on
+        # every JavaScript file, and every write is noise to someone writing
+        # JavaScript all day.
+        gap = next((f for f in findings if f["verdict"] == "NOT_RUN"
+                    and "could not read this file" in f["detail"]), None)
+        if gap and announce_once(session, Path(path).suffix.lower()):
+            return (render(path, [gap]),
+                    hashlib.sha256(text.encode()).hexdigest())
         # Nothing surfaced. A check that did not run is not an observation
         # about this file, and announcing it here would put the tool's own
         # limitation where a finding about the code belongs.
@@ -363,7 +404,7 @@ def settle(session: str) -> str:
     reports, looked_at = [], []
     for path in [e["path"] for e in entries(state)]:
         looked_at.append(path)
-        got = assess(path)
+        got = assess(path, session)
         if got is None:
             reported.pop(path, None)
             continue
@@ -378,7 +419,12 @@ def settle(session: str) -> str:
             continue
         reported[path] = digest
         reports.append(report)
-    write_state(KIND, session, {"pending": [], "reported": reported})
+    # said_of is re-read here rather than carried from the top. assess() can
+    # add to it while this loop runs, and writing back the value captured
+    # before the loop put the stale one on disk, so a language announced
+    # during a turn was announced again on the next one.
+    write_state(KIND, session, {"pending": [], "reported": reported,
+                                "said_of": read_state(KIND, session)["said_of"]})
     return "\n".join(reports), len(looked_at)
 
 
@@ -411,7 +457,7 @@ def main() -> int:
         # The Stop hook is not running in this session, so these were held and
         # nothing came for them. Reporting late beats the hook going silently
         # dead, and saying why beats reporting them as if this were normal.
-        reports = [r for r in (assess(p) for p in late) if r]
+        reports = [r for r in (assess(p, session) for p in late) if r]
         drop(KIND, session, late)
         trace(f"PostToolUse:{KIND}", "fired",
               f"{len(late)} write(s) held past the wait with no Stop firing")

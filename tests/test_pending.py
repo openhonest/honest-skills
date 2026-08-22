@@ -36,17 +36,17 @@ def test_a_session_id_cannot_escape_the_state_directory():
 def test_unreadable_state_is_treated_as_empty():
     pending.state_file("edit", "s").parent.mkdir(parents=True, exist_ok=True)
     pending.state_file("edit", "s").write_text("{not json")
-    assert pending.read_state("edit", "s") == {"pending": [], "reported": {}}
+    assert pending.read_state("edit", "s") == {"pending": [], "reported": {}, "said_of": []}
 
 
 def test_absent_state_is_treated_as_empty():
-    assert pending.read_state("edit", "never") == {"pending": [], "reported": {}}
+    assert pending.read_state("edit", "never") == {"pending": [], "reported": {}, "said_of": []}
 
 
 def test_state_of_the_wrong_shape_is_treated_as_empty():
     pending.state_file("edit", "s").parent.mkdir(parents=True, exist_ok=True)
     pending.state_file("edit", "s").write_text('{"pending": 3, "reported": "no"}')
-    assert pending.read_state("edit", "s") == {"pending": [], "reported": {}}
+    assert pending.read_state("edit", "s") == {"pending": [], "reported": {}, "said_of": []}
 
 
 def test_a_path_deferred_twice_is_held_once():
@@ -69,7 +69,7 @@ def test_two_hooks_do_not_clear_each_others_pending_writes():
 def test_an_unwritable_state_directory_does_not_raise(monkeypatch):
     monkeypatch.setenv("HONEST_PENDING_DIR", "/dev/null/nope")
     pending.defer("edit", "/a.py", "s")        # must not raise
-    assert pending.read_state("edit", "s") == {"pending": [], "reported": {}}
+    assert pending.read_state("edit", "s") == {"pending": [], "reported": {}, "said_of": []}
 
 
 # --- writes nothing is coming back for ---------------------------------------
@@ -143,3 +143,25 @@ def test_a_pending_file_that_is_gone_drains_rather_than_sitting_forever():
     assert pending.stranded("edit", "s") == ["/nope.py"]
     pending.drop("edit", "s", ["/nope.py"])
     assert pending.entries(pending.read_state("edit", "s")) == []
+
+
+def test_state_written_during_a_settle_is_not_overwritten_by_stale_state():
+    """A settle captured said_of before its loop and wrote it back after, so a
+    language announced during the turn was announced again on the next one.
+    Read-modify-write across a loop that also writes."""
+    pending.write_state("edit", "s", {"pending": [], "reported": {},
+                                      "said_of": [".js"]})
+    assert pending.read_state("edit", "s")["said_of"] == [".js"]
+
+
+def test_every_read_returns_the_same_keys(tmp_path, monkeypatch):
+    """Two return paths and one missing a key is how `said_of` reached some
+    callers and not others within a minute of being added."""
+    absent = pending.read_state("edit", "never-written")
+    pending.state_file("edit", "bad").parent.mkdir(parents=True, exist_ok=True)
+    pending.state_file("edit", "bad").write_text("{not json")
+    pending.state_file("edit", "list").write_text("[1, 2]")
+    pending.write_state("edit", "good", {"pending": [], "reported": {}})
+    keys = {frozenset(pending.read_state("edit", k))
+            for k in ("never-written", "bad", "list", "good")}
+    assert keys == {frozenset(absent)}

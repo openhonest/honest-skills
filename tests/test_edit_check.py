@@ -770,3 +770,85 @@ def test_the_row_says_how_many_files_were_looked_at(tmp_path, monkeypatch):
     rows = [json.loads(l) for l in log.read_text().splitlines()]
     assert any("2 file(s) assessed, none had anything to say" in r["why"]
                for r in rows)
+
+
+def test_a_file_the_reader_cannot_read_is_not_reported_as_clean(
+        tmp_path, monkeypatch):
+    """A Python parser over a JavaScript file returns an empty tree, and every
+    clause that walks the tree finds nothing in it and counts as holding. A
+    JavaScript file scored 87.5 percent that way, on clauses that never read
+    it. Silence here would publish the same thing."""
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/bin/true")
+    payload_json = json.dumps({"clauses":
+        [{"code": f"L1.21.{i}", "decided": False, "undecided": "unreadable",
+          "findings": []} for i in range(16)]
+        + [{"code": "L1.21.17", "decided": True, "findings": []}],
+        "decided_clauses": 1})
+    monkeypatch.setattr(edit_check.subprocess, "run",
+                        lambda *a, **k: type("R", (), {"stdout": payload_json})())
+    f = tmp_path / "app.js"; f.write_text("class A extends B {}\n")
+    got = edit_check.honest_code_finding(str(f))
+    assert got["verdict"] == "NOT_RUN"
+    assert "16 of 17 clauses could not read this file" in got["detail"]
+
+
+def test_a_python_file_with_no_findings_stays_silent(tmp_path, monkeypatch):
+    """The clauses that do not apply to a Python file are not a coverage gap,
+    so a clean Python file must not start announcing one."""
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/bin/true")
+    payload_json = json.dumps({"clauses":
+        [{"code": "L1.21.6", "decided": False, "undecided": "not applicable",
+          "findings": []},
+         {"code": "L1.21.17", "decided": False, "undecided": "never",
+          "findings": []},
+         {"code": "L1.21.1", "decided": True, "findings": []}],
+        "decided_clauses": 1})
+    monkeypatch.setattr(edit_check.subprocess, "run",
+                        lambda *a, **k: type("R", (), {"stdout": payload_json})())
+    f = tmp_path / "app.py"; f.write_text(CLEAN)
+    assert edit_check.honest_code_finding(str(f)) is None
+
+
+def test_the_coverage_gap_is_announced_once_per_language_per_session(
+        tmp_path, monkeypatch):
+    """Never is a false clean bill on every JavaScript file. Every write is
+    noise to anyone writing JavaScript all day."""
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/bin/true")
+    unreadable = json.dumps({"clauses": [
+        {"code": "L1.21.1", "decided": False, "undecided": "unreadable",
+         "findings": []}], "decided_clauses": 0})
+    monkeypatch.setattr(edit_check.subprocess, "run",
+                        lambda *a, **k: type("R", (), {"stdout": unreadable})())
+    a = tmp_path / "a.js"; a.write_text("class A {}\n")
+    b = tmp_path / "b.js"; b.write_text("class B {}\n")
+    code, err = run_hook(payload(a), monkeypatch)
+    assert code == 2 and "could not read this file" in err
+    assert run_hook(payload(b), monkeypatch) == (0, "")
+
+
+def test_a_second_language_is_announced_on_its_own(tmp_path, monkeypatch):
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/bin/true")
+    unreadable = json.dumps({"clauses": [
+        {"code": "L1.21.1", "decided": False, "undecided": "unreadable",
+         "findings": []}], "decided_clauses": 0})
+    monkeypatch.setattr(edit_check.subprocess, "run",
+                        lambda *a, **k: type("R", (), {"stdout": unreadable})())
+    js = tmp_path / "a.js"; js.write_text("class A {}\n")
+    rs = tmp_path / "a.rs"; rs.write_text("fn main() {}\n")
+    assert run_hook(payload(js), monkeypatch)[0] == 2
+    assert run_hook(payload(rs), monkeypatch)[0] == 2
+
+
+def test_the_announcement_survives_the_turn_ending(tmp_path, monkeypatch):
+    """Rebuilding the state each turn would reset it, turning once per session
+    into once per turn."""
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/bin/true")
+    unreadable = json.dumps({"clauses": [
+        {"code": "L1.21.1", "decided": False, "undecided": "unreadable",
+         "findings": []}], "decided_clauses": 0})
+    monkeypatch.setattr(edit_check.subprocess, "run",
+                        lambda *a, **k: type("R", (), {"stdout": unreadable})())
+    a = tmp_path / "a.js"; a.write_text("class A {}\n")
+    assert run_hook(payload(a), monkeypatch)[0] == 2
+    b = tmp_path / "b.js"; b.write_text("class B {}\n")
+    assert run_hook(payload(b), monkeypatch) == (0, "")

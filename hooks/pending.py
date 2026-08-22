@@ -120,11 +120,16 @@ def read_state(kind: str, session: str) -> dict:
     try:
         d = json.loads(state_file(kind, session).read_text())
     except (OSError, ValueError):
-        return {"pending": [], "reported": {}}
-    pending = d.get("pending")
-    reported = d.get("reported")
+        d = {}
+    if not isinstance(d, dict):
+        d = {}
+    # One return, so a key added later cannot reach some callers and not
+    # others. The early return for unreadable state was missing `said_of`
+    # within a minute of the field being added.
+    pending, reported, said = d.get("pending"), d.get("reported"), d.get("said_of")
     return {"pending": pending if isinstance(pending, list) else [],
-            "reported": reported if isinstance(reported, dict) else {}}
+            "reported": reported if isinstance(reported, dict) else {},
+            "said_of": said if isinstance(said, list) else []}
 
 
 def write_state(kind: str, session: str, state: dict) -> None:
