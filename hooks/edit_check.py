@@ -431,6 +431,23 @@ def assess(path: str, session: str = "") -> tuple[str, str] | None:
     # checks, which is a count of events rather than a measurement.
     ran = CHECKS - sum(1 for f in findings if f["verdict"] == "NOT_RUN")
     hits = [f["indicator"] for f in findings if f["verdict"] != "NOT_RUN"]
+    # What the hook did, and what the code was, are two different facts and
+    # the record keeps them apart. `verdict` is the tool's action. `unit` is
+    # the state of the thing written, which is what a control chart plots.
+    #
+    # A silent pass is a measurement, not an absence of one, so it is recorded
+    # rather than left to be inferred from the lack of a row. And a file the
+    # checks could not fully read is NOT a conforming unit: it is a missing
+    # measurement, and counting it as good inflates the rate by exactly the
+    # amount the instrument could not see.
+    if any(f["verdict"] == "SUPPRESSED" for f in findings):
+        unit = "suppressed"
+    elif any(f["verdict"] == "OUT_OF_SPEC" for f in findings):
+        unit = "nonconforming"
+    elif ran < CHECKS:
+        unit = "not_measured"
+    else:
+        unit = "conformed"
     # The clause is what teaches. "L1.21 fired" says a rule was broken; the
     # clause says which habit produced it, and that is the thing a series of
     # writes can show moving.
@@ -450,7 +467,8 @@ def assess(path: str, session: str = "") -> tuple[str, str] | None:
     trace("Stop:edit", verdict,
           f"{ran} of {CHECKS} ran, {Path(path).suffix or 'no suffix'}"
           + (f", {','.join(hits)}" if hits else ""),
-          file=path, clauses=clauses or None)
+          file=path, unit=unit, checks_ran=ran, checks=CHECKS,
+          clauses=clauses or None)
     if not any(f["verdict"] != "NOT_RUN" for f in findings):
         # A coverage gap on THIS file is an observation about this file, unlike
         # a missing binary, which says nothing about it. A Python parser over a

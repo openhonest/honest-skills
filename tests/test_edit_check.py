@@ -1033,3 +1033,66 @@ def test_clauses_are_ordered_by_number_not_as_text(tmp_path, monkeypatch):
     fired = [json.loads(l) for l in log.read_text().splitlines()
              if json.loads(l).get("verdict") == "fired"]
     assert fired[0]["clauses"] == ["L1.21.2", "L1.21.4", "L1.21.14"]
+
+
+# --- every write is a unit, and its state is recorded ------------------------
+
+def _unit(tmp_path, monkeypatch, finding, ran_all=True):
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    monkeypatch.setattr(edit_check, "honest_code_finding", lambda p: finding)
+    f = tmp_path / "a.py"; f.write_text(CLEAN)
+    run_hook(payload(f), monkeypatch)
+    rows = [json.loads(l) for l in log.read_text().splitlines()]
+    return next(r for r in rows if r["event"] == "Stop:edit" and "unit" in r)
+
+
+def test_a_silent_pass_is_recorded_as_a_measurement(tmp_path, monkeypatch):
+    """A conforming write is a data point. Left unrecorded there is no
+    denominator, and a chart of defects alone has no rate in it."""
+    row = _unit(tmp_path, monkeypatch, None)
+    assert row["unit"] == "conformed"
+    assert row["checks_ran"] == row["checks"] == edit_check.CHECKS
+
+
+def test_a_file_the_checks_could_not_read_is_not_a_conforming_unit(
+        tmp_path, monkeypatch):
+    """A JavaScript file that half the instrument cannot read used to record
+    identically to a clean one. That inflates the rate by exactly the amount
+    the instrument could not see."""
+    row = _unit(tmp_path, monkeypatch,
+                {"indicator": "L1.21", "verdict": "NOT_RUN",
+                 "detail": "d", "action": "a"})
+    assert row["unit"] == "not_measured"
+    assert row["checks_ran"] < row["checks"]
+
+
+def test_a_finding_makes_the_unit_nonconforming(tmp_path, monkeypatch):
+    row = _unit(tmp_path, monkeypatch,
+                {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
+                 "detail": "d", "action": "a"})
+    assert row["unit"] == "nonconforming"
+
+
+def test_a_silenced_check_makes_the_unit_suppressed_not_conforming(
+        tmp_path, monkeypatch):
+    row = _unit(tmp_path, monkeypatch,
+                {"indicator": "L1.21", "verdict": "SUPPRESSED",
+                 "detail": "d", "action": "a"})
+    assert row["unit"] == "suppressed"
+
+
+def test_a_suppression_outranks_a_finding_in_the_unit_state(tmp_path, monkeypatch):
+    """Silencing is the fact worth surfacing: it is the cheap route, and a
+    reader needs to see it was taken even when something else also fired."""
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    no_delegates(monkeypatch)
+    monkeypatch.setattr(edit_check, "annotation_finding",
+                        lambda p, s: {"indicator": "L1.21", "verdict": "SUPPRESSED",
+                                      "detail": "d", "action": "a"})
+    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)   # also trips L1.17
+    run_hook(payload(f), monkeypatch)
+    row = next(json.loads(l) for l in log.read_text().splitlines()
+               if json.loads(l).get("event") == "Stop:edit" and "unit" in json.loads(l))
+    assert row["unit"] == "suppressed"
