@@ -200,3 +200,13 @@ def test_writes_held_before_any_turn_has_ended_report_no_rate():
     rows = [{"event": "PostToolUse:edit", "verdict": "deferred", "why": ""}]
     got = hook_report.settled(rows)
     assert "1 write(s) held" in got and "denominator" not in got
+
+
+def test_a_held_write_is_not_counted_as_a_decline():
+    """Held is its own verdict. Bucketing it with declined made a hook that
+    caught three files read as "0 fired (0%)", which is the display saying
+    nothing happened about the case the hook exists for."""
+    rows = [{"event": "PostToolUse:bash", "verdict": "deferred", "why": "held"},
+            {"event": "PostToolUse:bash", "verdict": "declined", "why": "no change"}]
+    got = hook_report.render(rows)
+    assert "1 held for the settle" in got and "deferred    1  held" in got

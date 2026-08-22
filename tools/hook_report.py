@@ -47,12 +47,17 @@ def render(rows: list[dict]) -> str:
     for event in sorted({r["event"] for r in rows}):
         got = [r for r in rows if r["event"] == event]
         fired = sum(1 for r in got if r["verdict"] == "fired")
+        held = sum(1 for r in got if r["verdict"] == "deferred")
         pct = fired / len(got) * 100
-        out.append(f"\n{event}   {len(got)} runs, {fired} fired ({pct:.0f}%)")
-        for why, n in Counter(r["why"] for r in got if r["verdict"] == "fired").most_common(5):
-            out.append(f"    fired    {n:>4}  {why[:66]}")
-        for why, n in Counter(r["why"] for r in got if r["verdict"] != "fired").most_common(5):
-            out.append(f"    declined {n:>4}  {why[:66]}")
+        # Held is its own verdict. Counting it as declined made a hook that
+        # caught three files read as "0 fired (0%)", which is the display
+        # saying nothing happened about the case the hook exists for.
+        line = f"\n{event}   {len(got)} runs, {fired} fired ({pct:.0f}%)"
+        out.append(line + (f", {held} held for the settle" if held else ""))
+        for verdict in ("fired", "deferred", "declined"):
+            for why, n in Counter(r["why"] for r in got
+                                  if r["verdict"] == verdict).most_common(5):
+                out.append(f"    {verdict:<8} {n:>4}  {why[:66]}")
     return "\n".join(out)
 
 
