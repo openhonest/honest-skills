@@ -62,6 +62,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import re
 import shutil
 import subprocess
 import sys
@@ -146,6 +147,35 @@ def whitespace_finding(text: str) -> dict | None:
             "action": "run the formatter this project already has"}
 
 
+def changed_lines(path: str) -> set[int] | None:
+    """Line numbers this file gained or altered against its committed version.
+
+    None when there is nothing to compare against: not a repository, not
+    tracked, or git unavailable. None means report everything, because a file
+    with no baseline has no old findings to separate from new ones.
+
+    This exists because the hook was reporting the whole file. A one-line edit
+    to a 500-line module returned all 45 of its findings, most of them years
+    old, and the reader had to find the one they had just caused. Reporting a
+    file's history back at someone who changed one line is the load this
+    project exists to remove.
+    """
+    try:
+        r = subprocess.run(["git", "diff", "-U0", "--", path],
+                           capture_output=True, text=True, timeout=10,
+                           cwd=os.path.dirname(path) or ".")
+        if r.returncode != 0 or not r.stdout.strip():
+            return None
+    except (OSError, subprocess.SubprocessError):
+        return None
+    lines: set[int] = set()
+    for m in re.finditer(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", r.stdout, re.M):
+        start = int(m.group(1))
+        count = int(m.group(2)) if m.group(2) is not None else 1
+        lines.update(range(start, start + count))
+    return lines or None
+
+
 def honest_code_finding(path: str) -> dict | None:
     """L1.21, the Honest Code clauses, measured on this one file.
 
@@ -186,15 +216,28 @@ def honest_code_finding(path: str) -> dict | None:
     if not hits:
         return None
 
+    # Only what this edit touched, when there is a baseline to compare against.
+    # The rest of the file's findings are real and are not this person's
+    # business right now.
+    touched = changed_lines(path)
+    older = 0
+    if touched is not None:
+        mine = [f for f in hits if f.get("line") in touched]
+        older = len(hits) - len(mine)
+        if not mine:
+            return None
+        hits = mine
+
     shown = hits[:MAX_CLAUSE_FINDINGS]
     lines = [f"{h.get('clause')} line {h.get('line')}: {h.get('detail')}"
              for h in shown]
     if len(hits) > len(shown):
         lines.append(f"and {len(hits) - len(shown)} more, not shown")
     return {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
-            "detail": f"{len(hits)} Honest Code finding(s), "
-                      f"{decided} of {len(clauses)} clauses decided; "
-                      + "; ".join(lines),
+            "detail": f"{len(hits)} Honest Code finding(s) on lines you changed, "
+                      f"{decided} of {len(clauses)} clauses decided"
+                      + (f", {older} elsewhere in the file not shown" if older else "")
+                      + "; " + "; ".join(lines),
             "action": shown[0].get("instead") or "see the clause detail",
             "caveat": "these bands are expert judgment, not measured, and the "
                       "clauses this file could not decide are outside the score"}

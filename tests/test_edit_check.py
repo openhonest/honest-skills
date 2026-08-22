@@ -235,7 +235,14 @@ def test_the_caveat_is_rendered_when_present():
 # --- L1.21, the Honest Code clauses -----------------------------------------
 
 def fake_honest(payload):
-    return lambda *a, **k: type("R", (), {"stdout": json.dumps(payload)})()
+    """Stands in for both calls: the analyzer, and the `git diff` that decides
+    which lines changed. returncode 1 means no baseline, so every finding is
+    reported and the line filter stays out of these tests."""
+    def run(cmd, *a, **k):
+        if cmd and cmd[0] == "git":
+            return type("R", (), {"returncode": 1, "stdout": ""})()
+        return type("R", (), {"returncode": 0, "stdout": json.dumps(payload)})()
+    return run
 
 
 def test_a_clean_file_produces_no_honest_code_finding(monkeypatch):
@@ -395,3 +402,69 @@ def test_an_unchecked_extension_is_recorded_rather_than_silent(tmp_path, monkeyp
     assert run_hook(payload(f), monkeypatch) == (0, "")
     row = json.loads(log.read_text())
     assert "not a checked extension: .md" in row["why"]
+
+
+# --- only the lines this edit touched ---------------------------------------
+
+def test_only_findings_on_changed_lines_are_reported(monkeypatch):
+    """A one-line edit to a 500-line module returned all 45 of its findings,
+    most of them years old, and the reader had to find the one they caused."""
+    payload = {"clauses": [{"code": "L1.21.14", "decided": True, "findings": [
+        {"clause": "L1.21.14", "line": 5, "detail": "yours", "instead": "fix"},
+        {"clause": "L1.21.8", "line": 400, "detail": "ancient", "instead": "fix"}]}],
+        "decided_clauses": 14, "unreadable_reason": ""}
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
+    monkeypatch.setattr(edit_check.subprocess, "run", lambda cmd, *a, **k:
+        type("R", (), {"returncode": 0,
+                       "stdout": "@@ -5,0 +5,1 @@\n" if cmd[0] == "git"
+                                 else json.dumps(payload)})())
+    f = edit_check.honest_code_finding("x.py")
+    assert "yours" in f["detail"] and "ancient" not in f["detail"]
+    assert "1 elsewhere in the file not shown" in f["detail"]
+
+
+def test_a_file_whose_old_findings_are_untouched_is_silent(monkeypatch):
+    """Editing a clean line of a dirty file is not an occasion to report the
+    file's history back at you."""
+    payload = {"clauses": [{"code": "L1.21.8", "decided": True, "findings": [
+        {"clause": "L1.21.8", "line": 400, "detail": "ancient", "instead": "fix"}]}],
+        "decided_clauses": 14, "unreadable_reason": ""}
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
+    monkeypatch.setattr(edit_check.subprocess, "run", lambda cmd, *a, **k:
+        type("R", (), {"returncode": 0,
+                       "stdout": "@@ -5,0 +5,1 @@\n" if cmd[0] == "git"
+                                 else json.dumps(payload)})())
+    assert edit_check.honest_code_finding("x.py") is None
+
+
+def test_no_baseline_means_report_everything(monkeypatch):
+    """A file with no committed version has no old findings to separate from
+    new ones, so filtering would hide real ones."""
+    monkeypatch.setattr(edit_check.subprocess, "run", lambda *a, **k:
+        type("R", (), {"returncode": 1, "stdout": ""})())
+    assert edit_check.changed_lines("x.py") is None
+
+
+def test_git_being_absent_means_report_everything(monkeypatch):
+    def boom(*a, **k):
+        raise OSError("no git")
+    monkeypatch.setattr(edit_check.subprocess, "run", boom)
+    assert edit_check.changed_lines("x.py") is None
+
+
+@pytest.mark.parametrize("hunk,expected", [
+    ("@@ -1 +1 @@\n", {1}),
+    ("@@ -5,0 +5,3 @@\n", {5, 6, 7}),
+    ("@@ -1,2 +1,1 @@\n@@ -9,0 +20,2 @@\n", {1, 20, 21}),
+])
+def test_hunk_headers_are_read_in_both_forms(monkeypatch, hunk, expected):
+    """`+5` and `+5,3` are both valid, and a header with no count means one."""
+    monkeypatch.setattr(edit_check.subprocess, "run", lambda *a, **k:
+        type("R", (), {"returncode": 0, "stdout": hunk})())
+    assert edit_check.changed_lines("x.py") == expected
+
+
+def test_a_diff_with_no_hunks_reports_everything(monkeypatch):
+    monkeypatch.setattr(edit_check.subprocess, "run", lambda *a, **k:
+        type("R", (), {"returncode": 0, "stdout": "diff --git a/x b/x\n"})())
+    assert edit_check.changed_lines("x.py") is None

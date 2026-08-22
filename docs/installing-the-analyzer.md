@@ -10,6 +10,14 @@ The `--python` flag is required and the reason is not obvious. Without it, uv pi
 
 Do not symlink the project's own console script onto PATH. It works, and it ties the installed tool to whatever branch that source tree happens to be on.
 
+## What this measures, and what it does not
+
+It measures shape, not correctness. A session introduced a regression that moved zero rows in a database transfer and the hook said nothing about it, because nothing about the shape of that code was wrong. The test suite caught it. A clean L1.21 report is not evidence the code works.
+
+It is advisory rather than blocking. The write has already happened when it speaks, so it tells you what you just did rather than stopping you doing it.
+
+Measured across one package of 167 findings: 105 implicit defaults that were real and invisible to other checks, and 47 that the project had already decided against. 21 of those sat on functions carrying an explicit boundary decoration the analyzer does not read, and 26 were exception classes a project rule permits. Roughly a third of what it reports may be decisions someone already made.
+
 ## A fix in the analyzer needs a reinstall here
 
 `uv tool install` takes a snapshot, so the binary on PATH is frozen at install time and does not follow the source tree. That is the trade: a binary that tracked the tree would change under you whenever someone switched branches in it.
