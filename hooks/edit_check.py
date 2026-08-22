@@ -245,7 +245,31 @@ def honest_code_finding(path: str) -> dict | None:
     clauses = data.get("clauses") or []
     decided = data.get("decided_clauses")
     gaps = coverage_gap(clauses)
+    # What this edit silenced rather than fixed. The analyzer has always
+    # reported it and this hook threw it away, so an annotation that made a
+    # finding disappear was indistinguishable from writing conforming code.
+    # Anything scoring an agent on conformance would have paid it the same
+    # either way, and silencing is the cheaper of the two.
+    silenced = [a for c in clauses for a in (c.get("allowed") or [])]
     hits = [f for c in clauses for f in (c.get("findings") or [])]
+    # Scoped only when there is something to scope. Asking git on every file
+    # made the call unconditional, which is work nobody asked for on the
+    # common path.
+    mine = []
+    if silenced and not hits:
+        touched_now = changed_lines(path)
+        mine = [a for a in silenced
+                if touched_now is None or a.get("line") in touched_now]
+    if mine:
+        # Silenced on the lines this edit touched, with nothing left to report.
+        # Said plainly, because a suppression is a decision someone should be
+        # able to see, and the reason travels with it.
+        first = mine[0]
+        return {"indicator": "L1.21", "verdict": "SUPPRESSED",
+                "detail": f"{len(mine)} finding(s) silenced on lines you "
+                          f"changed, not fixed; line {first.get('line')}: "
+                          f"{first.get('reason') or 'no reason given'}",
+                "action": "this counts as a suppression, not as conforming code"}
     if not hits and gaps:
         # No findings and a coverage gap is not a clean file, it is a file the
         # reader could not read. A Python parser over a JavaScript file returns
@@ -362,7 +386,15 @@ def assess(path: str, session: str = "") -> tuple[str, str] | None:
     # checks, which is a count of events rather than a measurement.
     ran = CHECKS - sum(1 for f in findings if f["verdict"] == "NOT_RUN")
     hits = [f["indicator"] for f in findings if f["verdict"] != "NOT_RUN"]
-    trace("Stop:edit", "fired" if hits else "declined",
+    # A suppression is its own verdict in the record. Left as "fired" it would
+    # count against the writer like a real finding; left as "declined" it would
+    # count as conforming code, which is the reading that makes silencing the
+    # cheap way to a good score.
+    verdict = ("suppressed"
+               if hits and all(f["verdict"] in ("NOT_RUN", "SUPPRESSED")
+                               for f in findings)
+               else "fired" if hits else "declined")
+    trace("Stop:edit", verdict,
           f"{ran} of {CHECKS} ran, {Path(path).suffix or 'no suffix'}"
           + (f", {','.join(hits)}" if hits else ""),
           file=path)

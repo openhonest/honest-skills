@@ -852,3 +852,79 @@ def test_the_announcement_survives_the_turn_ending(tmp_path, monkeypatch):
     assert run_hook(payload(a), monkeypatch)[0] == 2
     b = tmp_path / "b.js"; b.write_text("class B {}\n")
     assert run_hook(payload(b), monkeypatch) == (0, "")
+
+
+# --- silenced is not the same as fixed --------------------------------------
+
+def _analyzer(monkeypatch, payload):
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/bin/true")
+    monkeypatch.setattr(edit_check.subprocess, "run",
+                        lambda *a, **k: type("R", (), {"stdout": json.dumps(payload)})())
+
+
+def test_a_silenced_finding_is_reported_as_silenced_not_as_clean(
+        tmp_path, monkeypatch):
+    """An annotation that makes a finding disappear was indistinguishable from
+    writing conforming code. Anything scoring an agent on conformance paid it
+    the same either way, and silencing is the cheaper of the two."""
+    _analyzer(monkeypatch, {"clauses": [
+        {"code": "L1.21.8", "decided": True, "findings": [],
+         "allowed": [{"line": 4, "reason": "legacy caller needs None"}]}],
+        "decided_clauses": 1})
+    monkeypatch.setattr(edit_check, "changed_lines", lambda p: None)
+    f = tmp_path / "a.py"; f.write_text(CLEAN)
+    got = edit_check.honest_code_finding(str(f))
+    assert got["verdict"] == "SUPPRESSED"
+    assert "silenced on lines you changed, not fixed" in got["detail"]
+    assert "legacy caller needs None" in got["detail"]
+
+
+def test_the_reason_travels_with_the_suppression(tmp_path, monkeypatch):
+    """A suppression is a decision someone should be able to see."""
+    _analyzer(monkeypatch, {"clauses": [
+        {"code": "L1.21.8", "decided": True, "findings": [],
+         "allowed": [{"line": 9}]}], "decided_clauses": 1})
+    monkeypatch.setattr(edit_check, "changed_lines", lambda p: None)
+    f = tmp_path / "a.py"; f.write_text(CLEAN)
+    assert "no reason given" in edit_check.honest_code_finding(str(f))["detail"]
+
+
+def test_a_suppression_on_a_line_this_edit_did_not_touch_is_not_reported(
+        tmp_path, monkeypatch):
+    """Someone else's earlier decision is not this writer's business, the same
+    rule the findings already follow."""
+    _analyzer(monkeypatch, {"clauses": [
+        {"code": "L1.21.8", "decided": True, "findings": [],
+         "allowed": [{"line": 400, "reason": "old"}]}], "decided_clauses": 1})
+    monkeypatch.setattr(edit_check, "changed_lines", lambda p: {7, 8})
+    f = tmp_path / "a.py"; f.write_text(CLEAN)
+    assert edit_check.honest_code_finding(str(f)) is None
+
+
+def test_a_real_finding_outranks_a_suppression(tmp_path, monkeypatch):
+    """Something still broken is the more useful thing to say."""
+    _analyzer(monkeypatch, {"clauses": [
+        {"code": "L1.21.8", "decided": True,
+         "findings": [{"clause": "L1.21.8", "line": 4, "detail": "d",
+                       "instead": "i"}],
+         "allowed": [{"line": 9, "reason": "r"}]}], "decided_clauses": 1})
+    monkeypatch.setattr(edit_check, "changed_lines", lambda p: None)
+    f = tmp_path / "a.py"; f.write_text(CLEAN)
+    assert edit_check.honest_code_finding(str(f))["verdict"] == "OUT_OF_SPEC"
+
+
+def test_the_record_calls_a_suppression_neither_fired_nor_clean(
+        tmp_path, monkeypatch):
+    """Left as fired it counts against the writer like a real finding. Left as
+    declined it counts as conforming code, which is the reading that makes
+    silencing the cheap route to a good score."""
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    monkeypatch.setattr(edit_check, "honest_code_finding",
+                        lambda p: {"indicator": "L1.21", "verdict": "SUPPRESSED",
+                                   "detail": "1 finding(s) silenced", "action": "a"})
+    f = tmp_path / "a.py"; f.write_text(CLEAN)
+    run_hook(payload(f), monkeypatch)
+    rows = [json.loads(l) for l in log.read_text().splitlines()]
+    assert any(r["verdict"] == "suppressed" for r in rows
+               if r["event"] == "Stop:edit")
