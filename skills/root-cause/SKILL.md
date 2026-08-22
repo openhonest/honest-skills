@@ -58,6 +58,8 @@ The fast, correct way to find the next link is to follow the actual data/control
 
 A theory you could have checked but didn't is not part of an RCA.
 
+The tell is holding the numbers already. One session theorised through three escalating causes while holding the three values that settled it: four tokens, thirty tokens, a 0.75 threshold. One division ended the question. If the answer is arithmetic, do the arithmetic before writing a word of explanation.
+
 ## Every instrument has a horizon: change instruments at each limit
 
 An RCA rarely stalls from laziness. It stalls from trusting one instrument past the edge of what it can show. Every tool of observation is **constitutively blind** beyond some horizon, and the root frequently lives past that horizon. That is exactly why no amount of careful reading of a *single* instrument reaches it.

@@ -32,6 +32,27 @@ all expensive.
 Someone asked a question. They want the answer, then the evidence, then what
 they have to do about it. They do not want to watch you think.
 
+## Before you write anything: run the check that settles it
+
+Ask what one command would decide the question, and run it. A theory costs the
+reader a full read and leaves them where they started. The check costs you
+thirty seconds and ends the matter.
+
+The signal you are about to get this wrong is having the numbers already. A
+session spent five exchanges on a failing gate, theorising about a category
+mismatch, then a broken harness, then an unpassable gate. It held three numbers
+the whole time: four tokens, thirty tokens, threshold 0.75. One division settles
+it. When it finally ran a thirty-second probe, the scores moved immediately and
+the theory collapsed.
+
+So: if the question is arithmetic, do the arithmetic. If one call would show it,
+make the call. If a test exists, run it. Report what happened, not what you
+expect to happen.
+
+This is upstream of every other rule here. A wrong theory delivered in perfect
+format is still wrong, and it costs more than any formatting defect, because the
+reader acts on it.
+
 **Triggers: investigate, report, resolve, assess, tell me, what happened, status.**
 
 Also every screenshot they send, because a screenshot is someone pointing at
