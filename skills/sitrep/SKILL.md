@@ -99,6 +99,26 @@ think anyone cared. Nothing did.
 **You do not have to say something.** If there is nothing the reader must act
 on, the honest report is short or absent. Filling the space is not thoroughness.
 
+**2b. Do not size the claim to the effort.** A large finding makes the hour
+you spent look like a discovery. A small one makes it look like you checked two
+things. That pull is real and it runs one way, so the claim you reach for first
+is usually bigger than the one you can defend.
+
+A session spent an hour on a failing gate and reported "no prompt can pass this
+gate as wired." The defensible claim was "the two prompts I tried emit sentences,
+and the matcher needs labels." The second is smaller, correct, and points at a
+question someone can answer in a minute.
+
+The test is mechanical. Write the claim, then ask what you actually observed. If
+you observed two cases, the claim is about two cases. If the general version
+needs a step you did not run, it is a hypothesis and belongs under GAPS with the
+step named.
+
+Watch for the claim that grows between drafts. In that session it went from a
+shape mismatch to a broken harness to an unpassable gate, and the arithmetic that
+settled it, four tokens against thirty at a 0.75 threshold, was available before
+any of them were written.
+
 **3. Every claim carries its evidence on the same line.** A number, a command
 output, a quoted line. "The homepage had no links" is an assertion. "anchors on
 the homepage: 0" is a finding. Never write "probably," "likely the cause" or
