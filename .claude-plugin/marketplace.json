@@ -12,7 +12,7 @@
     {
       "name": "honest-skills",
       "description": "Reduce the reader's cognitive load. Situation reports that put the finding first, decision briefs that price the cost of doing nothing, root cause analysis that refuses a claim without evidence, and prose and readability checks for Markdown and commit messages, enforced by hooks rather than offered as advice.",
-      "version": "0.21.1",
+      "version": "0.22.0",
       "source": "./",
       "author": {
         "name": "Adam Zachary Wasserman",
