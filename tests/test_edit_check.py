@@ -988,3 +988,48 @@ def test_a_word_that_merely_mentions_boundary_is_not_a_declaration(
     f.write_text("# the boundary is elsewhere\nboundary = 3\n"
                  "def f(x):\n    return x\n")
     assert edit_check.annotation_finding(str(f), f.read_text()) is None
+
+
+def test_the_record_names_which_clause_fired(tmp_path, monkeypatch):
+    """"L1.21 fired" says a rule was broken. The clause says which habit
+    produced it, and that is the thing a series of writes can show moving."""
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    monkeypatch.setattr(edit_check, "honest_code_finding",
+                        lambda p: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
+                                   "detail": "d", "action": "a",
+                                   "clauses": ["L1.21.14", "L1.21.4"]})
+    f = tmp_path / "a.py"; f.write_text(CLEAN)
+    run_hook(payload(f), monkeypatch)
+    rows = [json.loads(l) for l in log.read_text().splitlines()]
+    fired = [r for r in rows if r.get("verdict") == "fired"]
+    assert fired and fired[0]["clauses"] == ["L1.21.4", "L1.21.14"]  # numeric
+
+
+def test_a_finding_with_no_clause_leaves_the_field_out(tmp_path, monkeypatch):
+    """L1.17 and L1.16 are not clause-shaped, and an empty list in the record
+    would read as "asked and found none"."""
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    no_delegates(monkeypatch)
+    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    run_hook(payload(f), monkeypatch)
+    fired = [json.loads(l) for l in log.read_text().splitlines()
+             if json.loads(l).get("verdict") == "fired"]
+    assert fired and "clauses" not in fired[0]
+
+
+def test_clauses_are_ordered_by_number_not_as_text(tmp_path, monkeypatch):
+    """As text "L1.21.14" comes before "L1.21.4", which reads as a mistake to
+    anyone who knows the clauses."""
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    monkeypatch.setattr(edit_check, "honest_code_finding",
+                        lambda p: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
+                                   "detail": "d", "action": "a",
+                                   "clauses": ["L1.21.14", "L1.21.2", "L1.21.4"]})
+    f = tmp_path / "a.py"; f.write_text(CLEAN)
+    run_hook(payload(f), monkeypatch)
+    fired = [json.loads(l) for l in log.read_text().splitlines()
+             if json.loads(l).get("verdict") == "fired"]
+    assert fired[0]["clauses"] == ["L1.21.2", "L1.21.4", "L1.21.14"]

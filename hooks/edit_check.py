@@ -327,6 +327,9 @@ def honest_code_finding(path: str) -> dict | None:
             return None
         hits = mine
 
+    codes = sorted({h.get("clause") for h in hits if h.get("clause")},
+                   key=lambda c: [int(n) if n.isdigit() else 0
+                                  for n in c.replace("L", "").split(".")])
     shown = hits[:MAX_CLAUSE_FINDINGS]
     lines = [f"{h.get('clause')} line {h.get('line')}: {h.get('detail')}"
              for h in shown]
@@ -339,6 +342,7 @@ def honest_code_finding(path: str) -> dict | None:
                          f"to this file)" if gaps else "")
                       + (f", {older} elsewhere in the file not shown" if older else "")
                       + "; " + "; ".join(lines),
+            "clauses": codes,
             "action": shown[0].get("instead") or "see the clause detail",
             "caveat": "these bands are expert judgment, not measured, and the "
                       "clauses this file could not decide are outside the score"}
@@ -427,6 +431,14 @@ def assess(path: str, session: str = "") -> tuple[str, str] | None:
     # checks, which is a count of events rather than a measurement.
     ran = CHECKS - sum(1 for f in findings if f["verdict"] == "NOT_RUN")
     hits = [f["indicator"] for f in findings if f["verdict"] != "NOT_RUN"]
+    # The clause is what teaches. "L1.21 fired" says a rule was broken; the
+    # clause says which habit produced it, and that is the thing a series of
+    # writes can show moving.
+    # Sorted by number, not as text. As text "L1.21.14" comes before
+    # "L1.21.4", which reads as a mistake to anyone who knows the clauses.
+    clauses = sorted({c for f in findings for c in (f.get("clauses") or [])},
+                     key=lambda c: [int(n) if n.isdigit() else 0
+                                    for n in c.replace("L", "").split(".")])
     # A suppression is its own verdict in the record. Left as "fired" it would
     # count against the writer like a real finding; left as "declined" it would
     # count as conforming code, which is the reading that makes silencing the
@@ -438,7 +450,7 @@ def assess(path: str, session: str = "") -> tuple[str, str] | None:
     trace("Stop:edit", verdict,
           f"{ran} of {CHECKS} ran, {Path(path).suffix or 'no suffix'}"
           + (f", {','.join(hits)}" if hits else ""),
-          file=path)
+          file=path, clauses=clauses or None)
     if not any(f["verdict"] != "NOT_RUN" for f in findings):
         # A coverage gap on THIS file is an observation about this file, unlike
         # a missing binary, which says nothing about it. A Python parser over a
