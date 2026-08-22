@@ -154,6 +154,11 @@ def changed_lines(path: str) -> set[int] | None:
     tracked, or git unavailable. None means report everything, because a file
     with no baseline has no old findings to separate from new ones.
 
+    An EMPTY set is a different answer and means the file now matches its
+    committed version. Nothing was changed, so nothing is this edit's doing.
+    Conflating the two made `cp backup.py mutate.py` report every finding in
+    the file it had just restored.
+
     This exists because the hook was reporting the whole file. A one-line edit
     to a 500-line module returned all 45 of its findings, most of them years
     old, and the reader had to find the one they had just caused. Reporting a
@@ -161,11 +166,17 @@ def changed_lines(path: str) -> set[int] | None:
     project exists to remove.
     """
     try:
+        here = os.path.dirname(path) or "."
+        tracked = subprocess.run(["git", "ls-files", "--error-unmatch", "--", path],
+                                 capture_output=True, text=True, timeout=10, cwd=here)
+        if tracked.returncode != 0:
+            return None                       # not tracked: no baseline
         r = subprocess.run(["git", "diff", "-U0", "--", path],
-                           capture_output=True, text=True, timeout=10,
-                           cwd=os.path.dirname(path) or ".")
-        if r.returncode != 0 or not r.stdout.strip():
+                           capture_output=True, text=True, timeout=10, cwd=here)
+        if r.returncode != 0:
             return None
+        if not r.stdout.strip():
+            return set()                      # tracked and identical to HEAD
     except (OSError, subprocess.SubprocessError):
         return None
     lines: set[int] = set()
@@ -221,6 +232,9 @@ def honest_code_finding(path: str) -> dict | None:
     # business right now.
     touched = changed_lines(path)
     older = 0
+    if touched == set():
+        # The file matches its committed version. A restore is not an edit.
+        return None
     if touched is not None:
         mine = [f for f in hits if f.get("line") in touched]
         older = len(hits) - len(mine)

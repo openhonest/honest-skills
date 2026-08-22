@@ -437,12 +437,22 @@ def test_a_file_whose_old_findings_are_untouched_is_silent(monkeypatch):
     assert edit_check.honest_code_finding("x.py") is None
 
 
-def test_no_baseline_means_report_everything(monkeypatch):
+def test_an_untracked_file_has_no_baseline_and_reports_everything(monkeypatch):
     """A file with no committed version has no old findings to separate from
     new ones, so filtering would hide real ones."""
     monkeypatch.setattr(edit_check.subprocess, "run", lambda *a, **k:
         type("R", (), {"returncode": 1, "stdout": ""})())
     assert edit_check.changed_lines("x.py") is None
+
+
+def test_a_file_restored_to_its_committed_state_changed_nothing(monkeypatch):
+    """`cp backup.py mutate.py` reported every finding in the file it had just
+    restored. Tracked with an empty diff is the opposite of no baseline."""
+    def run(cmd, *a, **k):
+        rc = 0 if cmd[1] == "ls-files" else 0
+        return type("R", (), {"returncode": rc, "stdout": ""})()
+    monkeypatch.setattr(edit_check.subprocess, "run", run)
+    assert edit_check.changed_lines("x.py") == set()
 
 
 def test_git_being_absent_means_report_everything(monkeypatch):
@@ -467,4 +477,44 @@ def test_hunk_headers_are_read_in_both_forms(monkeypatch, hunk, expected):
 def test_a_diff_with_no_hunks_reports_everything(monkeypatch):
     monkeypatch.setattr(edit_check.subprocess, "run", lambda *a, **k:
         type("R", (), {"returncode": 0, "stdout": "diff --git a/x b/x\n"})())
+    assert edit_check.changed_lines("x.py") is None
+
+
+def test_a_restore_produces_no_finding_at_all(monkeypatch):
+    """The whole point: the file is back to what was committed, so nothing in
+    it is this edit's doing."""
+    payload = {"clauses": [{"code": "L1.21.8", "decided": True, "findings": [
+        {"clause": "L1.21.8", "line": 4, "detail": "old", "instead": "fix"}]}],
+        "decided_clauses": 14, "unreadable_reason": ""}
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
+    def run(cmd, *a, **k):
+        if cmd[0] == "git":
+            return type("R", (), {"returncode": 0, "stdout": ""})()
+        return type("R", (), {"returncode": 0, "stdout": json.dumps(payload)})()
+    monkeypatch.setattr(edit_check.subprocess, "run", run)
+    assert edit_check.honest_code_finding("x.py") is None
+
+
+def test_a_stubbornly_untracked_file_still_reports(monkeypatch):
+    """Not tracked is not the same as unchanged, and a new file's findings are
+    all new."""
+    payload = {"clauses": [{"code": "L1.21.8", "decided": True, "findings": [
+        {"clause": "L1.21.8", "line": 4, "detail": "new", "instead": "fix"}]}],
+        "decided_clauses": 14, "unreadable_reason": ""}
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
+    def run(cmd, *a, **k):
+        if cmd[0] == "git":
+            return type("R", (), {"returncode": 1, "stdout": ""})()
+        return type("R", (), {"returncode": 0, "stdout": json.dumps(payload)})()
+    monkeypatch.setattr(edit_check.subprocess, "run", run)
+    assert "new" in edit_check.honest_code_finding("x.py")["detail"]
+
+
+def test_a_diff_that_errors_after_the_file_is_tracked_reports_everything(monkeypatch):
+    """Tracked, but git could not produce a diff. That is a broken baseline
+    rather than an unchanged file, and the two must not be confused again."""
+    def run(cmd, *a, **k):
+        rc = 0 if cmd[1] == "ls-files" else 128
+        return type("R", (), {"returncode": rc, "stdout": ""})()
+    monkeypatch.setattr(edit_check.subprocess, "run", run)
     assert edit_check.changed_lines("x.py") is None
