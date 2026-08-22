@@ -88,3 +88,28 @@ def test_every_row_carries_the_time_it_was_written(tmp_path, monkeypatch):
     trace_hook.trace("E", "fired", "why")
     row = json.loads(log.read_text())
     assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d", row["ts"])
+
+
+def test_every_row_says_which_session_and_version_wrote_it(tmp_path, monkeypatch):
+    """Rows from every session share one file. Without these two fields there
+    was no way to tell whether a session that had not restarted was running the
+    new hooks, and the answer had to come from an experiment."""
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "abcdef1234567890")
+    monkeypatch.setattr(
+        trace_hook, "__file__",
+        "/c/honest-skills/honest-skills/0.23.0/hooks/trace_hook.py")
+    trace_hook.trace("E", "fired", "why")
+    row = json.loads(log.read_text())
+    assert row["session"] == "abcdef12" and row["version"] == "0.23.0"
+
+
+def test_a_row_written_outside_a_session_still_records(tmp_path, monkeypatch):
+    """Run by hand there is no session id, and an empty field is better than a
+    refusal to write."""
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
+    trace_hook.trace("E", "fired", "why")
+    assert json.loads(log.read_text())["session"] == ""

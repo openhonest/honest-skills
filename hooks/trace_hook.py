@@ -68,12 +68,20 @@ def trace(event: str, verdict: str, why: str, **facts: object) -> None:
         return
     try:
         with open(path, "a") as fh:
+            # The session and the version were added the same evening, after
+            # a question the trace could not answer: whether a session that had
+            # not restarted was running the new hooks. Rows from every session
+            # share one file with nothing saying which wrote which, so the
+            # answer had to come from an experiment instead of the record.
+            #
             # The timestamp and the file were both absent until 2026-08-21,
             # when the first real question asked of this trace (does the edit
             # hook fire several times on one file in one turn) could not be
             # answered from it. An instrument that cannot say when or on what
             # records that something happened, which is not a measurement.
             row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                   "session": os.environ.get("CLAUDE_SESSION_ID", "")[:8],
+                   "version": running_version(),
                    "event": event, "verdict": verdict, "why": why}
             # Named fields rather than more prose in `why`. Whether a firing
             # led to a fix cannot be read out of a sentence, and that is the

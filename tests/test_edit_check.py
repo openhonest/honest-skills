@@ -653,3 +653,26 @@ def test_a_stale_session_is_told_so_alongside_the_finding(tmp_path, monkeypatch)
     no_delegates(monkeypatch)
     report = edit_check.render(str(f), edit_check.findings_for(str(f), f.read_text()))
     assert "0.13.1" in report.splitlines()[1]
+
+
+# --- which kind of undecided ------------------------------------------------
+
+def test_a_rule_that_cannot_apply_is_not_a_gap_in_coverage():
+    """"14 of 19 decided" put a browser rule that cannot apply to a Python file
+    in the same bucket as a file nobody could parse. Only the second is a
+    failure to look, and counting both overstated what went unchecked on every
+    Python file ever measured."""
+    clauses = [{"decided": False, "undecided": "not applicable"},
+               {"decided": False, "undecided": "never"},
+               {"decided": True}]
+    assert edit_check.coverage_gap(clauses) == 0
+
+
+def test_a_clause_nobody_could_read_is_a_gap():
+    assert edit_check.coverage_gap([{"decided": False, "undecided": "unreadable"}]) == 1
+
+
+def test_an_undecided_clause_with_no_kind_counts_as_a_gap():
+    """A reader that cannot tell says it did not look, rather than assuming it
+    did. An older analyzer emits no kind at all."""
+    assert edit_check.coverage_gap([{"decided": False}]) == 1

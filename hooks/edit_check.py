@@ -189,6 +189,24 @@ def changed_lines(path: str) -> set[int] | None:
     return lines or None
 
 
+def coverage_gap(clauses: list[dict]) -> int:
+    """Undecided clauses that represent a failure to look, not a rule that
+    does not apply.
+
+    The analyzer separated these on 2026-08-21. Before that, "14 of 19 decided"
+    put a browser rule that cannot apply to a Python file in the same bucket as
+    a file the reader could not parse. Only the second is a gap in coverage,
+    and reporting both as one number overstates what went unchecked on every
+    Python file ever measured.
+
+    An undecided clause with no kind is counted as a gap. A reader that cannot
+    tell should say it did not look rather than assume it did.
+    """
+    return sum(1 for c in clauses
+               if not c.get("decided") and c.get("undecided") != "not applicable"
+               and c.get("undecided") != "never")
+
+
 def honest_code_finding(path: str) -> dict | None:
     """L1.21, the Honest Code clauses, measured on this one file.
 
@@ -225,6 +243,7 @@ def honest_code_finding(path: str) -> dict | None:
 
     clauses = data.get("clauses") or []
     decided = data.get("decided_clauses")
+    gaps = coverage_gap(clauses)
     hits = [f for c in clauses for f in (c.get("findings") or [])]
     if not hits:
         return None
@@ -252,6 +271,8 @@ def honest_code_finding(path: str) -> dict | None:
     return {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
             "detail": f"{len(hits)} Honest Code finding(s) on lines you changed, "
                       f"{decided} of {len(clauses)} clauses decided"
+                      + (f" ({gaps} could not be read, the rest do not apply "
+                         f"to this file)" if gaps else "")
                       + (f", {older} elsewhere in the file not shown" if older else "")
                       + "; " + "; ".join(lines),
             "action": shown[0].get("instead") or "see the clause detail",

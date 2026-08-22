@@ -628,8 +628,9 @@ def test_a_declining_turn_leaves_a_trace_when_asked(tmp_path, monkeypatch):
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
     stop(tmp_path, "The tests pass. 304 of them.")
     rows = [json.loads(l) for l in log.read_text().splitlines()]
-    assert [r["ts"] for r in rows] and [
-        {k: v for k, v in r.items() if k != "ts"} for r in rows] == [
+    bookkeeping = {"ts", "session", "version"}
+    assert all(bookkeeping <= set(r) for r in rows)
+    assert [{k: v for k, v in r.items() if k not in bookkeeping} for r in rows] == [
         {"event": "Stop", "verdict": "declined", "why": "no shape matched"}]
 
 
