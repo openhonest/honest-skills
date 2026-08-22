@@ -351,13 +351,18 @@ def assess(path: str) -> tuple[str, str] | None:
 def settle(session: str) -> str:
     """Assess every file this turn wrote, once each, at its final state.
 
+    Returns the report and how many files were looked at, because a caller
+    that only gets an empty string cannot tell "assessed four and they were
+    clean" from "there was nothing to assess".
+
     Clears the pending list whether or not anything is reported, so a file
     that was fixed before the turn ended leaves no residue for the next one.
     """
     state = read_state(KIND, session)
     reported = state["reported"]
-    reports = []
+    reports, looked_at = [], []
     for path in [e["path"] for e in entries(state)]:
+        looked_at.append(path)
         got = assess(path)
         if got is None:
             reported.pop(path, None)
@@ -374,7 +379,7 @@ def settle(session: str) -> str:
         reported[path] = digest
         reports.append(report)
     write_state(KIND, session, {"pending": [], "reported": reported})
-    return "\n".join(reports)
+    return "\n".join(reports), len(looked_at)
 
 
 def main() -> int:
@@ -384,8 +389,15 @@ def main() -> int:
     if not path:
         # No file path means this is the Stop firing, where the writes have
         # settled and the assessment is finally about the file that exists.
-        report = settle(session)
+        report, looked = settle(session)
         if not report:
+            # Recorded even with nothing to say. Without this row a Stop that
+            # ran and found nothing reads identically to a Stop that never
+            # ran, and on 2026-08-21 that cost a wrong diagnosis: two sessions
+            # holding writes with no settle recorded looked like stranding,
+            # and the missing row was the whole of the evidence.
+            trace("Stop:edit", "declined",
+                  f"{looked} file(s) assessed, none had anything to say")
             return 0
         print(report, file=sys.stderr)
         return 2                      # exit 2 puts stderr in front of the model

@@ -408,8 +408,9 @@ def test_a_clean_file_records_that_it_ran(tmp_path, monkeypatch):
     no_delegates(monkeypatch)
     f = tmp_path / "ok.py"; f.write_text(CLEAN)
     run_hook(payload(f), monkeypatch)
-    row = json.loads(log.read_text().splitlines()[-1])
-    assert row["verdict"] == "declined" and "3 of 3 ran" in row["why"]
+    rows = [json.loads(l) for l in log.read_text().splitlines()]
+    assert any(r["verdict"] == "declined" and "3 of 3 ran" in r["why"] for r in rows)
+    assert any("none had anything to say" in r["why"] for r in rows)
 
 
 def test_a_firing_records_which_indicators_hit(tmp_path, monkeypatch):
@@ -741,3 +742,31 @@ def test_a_stranded_write_with_nothing_to_say_is_dropped_quietly(
     other = tmp_path / "fresh.py"; other.write_text(CLEAN)
     assert _fire(payload(other), monkeypatch) == (0, "")
     assert edit_check.stranded("edit", "s1") == []
+
+
+def test_a_turn_that_settled_nothing_still_leaves_a_row(tmp_path, monkeypatch):
+    """Without it, a Stop that ran and found nothing reads identically to a
+    Stop that never ran. That cost a wrong diagnosis on 2026-08-21: two
+    sessions holding writes with no settle recorded looked like stranding, and
+    the missing row was the whole of the evidence."""
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    _fire(json.dumps({"session_id": "empty"}), monkeypatch)
+    row = json.loads(log.read_text())
+    assert row["event"] == "Stop:edit"
+    assert "0 file(s) assessed" in row["why"]
+
+
+def test_the_row_says_how_many_files_were_looked_at(tmp_path, monkeypatch):
+    """Assessed four and they were clean is a different fact from there was
+    nothing to assess, and the count is what separates them."""
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    no_delegates(monkeypatch)
+    for name in ("a.py", "b.py"):
+        f = tmp_path / name; f.write_text(CLEAN)
+        _fire(payload(f), monkeypatch)
+    _fire(json.dumps({"session_id": "s1"}), monkeypatch)
+    rows = [json.loads(l) for l in log.read_text().splitlines()]
+    assert any("2 file(s) assessed, none had anything to say" in r["why"]
+               for r in rows)

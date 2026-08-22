@@ -333,8 +333,10 @@ def test_a_clean_file_records_that_it_ran(tmp_path, monkeypatch):
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
     f = tmp_path / "gw.py"; f.write_text("def charge(c, a):\n    return c.debit(a)\n")
     run_hook(payload(f), monkeypatch)
-    row = json.loads(log.read_text().splitlines()[-1])
-    assert row["verdict"] == "declined" and "parsed, 0 found" in row["why"]
+    rows = [json.loads(l) for l in log.read_text().splitlines()]
+    assert any(r["verdict"] == "declined" and "parsed, 0 found" in r["why"]
+               for r in rows)
+    assert any("none had anything to say" in r["why"] for r in rows)
 
 
 def test_a_firing_records_how_it_decided(tmp_path, monkeypatch):
