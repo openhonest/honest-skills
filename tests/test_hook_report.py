@@ -210,3 +210,35 @@ def test_a_held_write_is_not_counted_as_a_decline():
             {"event": "PostToolUse:bash", "verdict": "declined", "why": "no change"}]
     got = hook_report.render(rows)
     assert "1 held for the settle" in got and "deferred    1  held" in got
+
+
+def test_a_scratch_file_is_not_counted_as_real_work():
+    """A hand-written list of filenames went stale within an hour and reported
+    a measurement whose entire signal was probe files. Classifying by path
+    needs no maintenance."""
+    assert not hook_report.is_real_work({"file": "/tmp/probe.py"})
+    assert not hook_report.is_real_work({"file": "/private/tmp/x/probe.py"})
+    assert not hook_report.is_real_work({"file": "/var/folders/qr/t/probe.py"})
+
+
+def test_a_project_file_is_real_work():
+    assert hook_report.is_real_work({"file": "/Users/adam/dev/thing/main.py"})
+
+
+def test_a_row_naming_no_file_is_not_excluded():
+    """A Stop row carries no file and must not be dropped from the counts."""
+    assert hook_report.is_real_work({"event": "Stop", "verdict": "declined"})
+
+
+def test_the_report_actually_applies_its_own_classifier(tmp_path, capsys):
+    """Defining a filter and not calling it is how the stale name list survived
+    as long as it did."""
+    path = write(tmp_path, [
+        {"event": "Stop:edit", "verdict": "fired", "why": "x",
+         "file": "/tmp/probe.py"},
+        {"event": "Stop:edit", "verdict": "fired", "why": "x",
+         "file": "/Users/a/dev/real.py"}])
+    sys.argv = ["hook_report.py", path]
+    hook_report.main()
+    out = capsys.readouterr().out
+    assert "1 events" in out

@@ -261,7 +261,7 @@ def assess(path: str) -> tuple[str, str] | None:
         return None
     how, stubs = findings_for(path, source)
     trace("Stop:stub", "fired" if stubs else "declined",
-          f"{how}, {len(stubs)} found", file=os.path.basename(path))
+          f"{how}, {len(stubs)} found", file=path)
     if not stubs:
         return None
     return (render(path, how, stubs),
@@ -314,7 +314,7 @@ def main() -> int:
         return 0
     defer(KIND, path, session)
     trace("PostToolUse:stub", "deferred", "held until the writes settle",
-          file=os.path.basename(path))
+          file=path)
     return 0                          # silence: the file may still be moving
 
 

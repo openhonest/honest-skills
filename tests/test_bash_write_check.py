@@ -184,3 +184,12 @@ def test_a_build_is_still_refused_before_anything_is_held(tmp_path, monkeypatch)
         (tmp_path / f"f{i}.py").write_text(CLEAN)
     assert run_hook(payload(tmp_path), monkeypatch) == (0, "")
     assert pending.read_state("edit", "s")["pending"] == []
+
+
+def test_the_trace_records_whole_paths_for_bash_writes(tmp_path, monkeypatch):
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    (tmp_path / "x.py").write_text(DIRTY)
+    run_hook(payload(tmp_path), monkeypatch)
+    row = json.loads(log.read_text().splitlines()[-1])
+    assert row["files"] == [str(tmp_path / "x.py")]

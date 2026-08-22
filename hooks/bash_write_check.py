@@ -110,7 +110,7 @@ def main() -> int:
         defer("edit", path, session)
         defer("stub", path, session)
     trace("PostToolUse:bash", "deferred", f"{len(written)} held until they settle",
-          files=[os.path.basename(p) for p in written])
+          files=written)
     return 0                          # silence: the files may still be moving
 
 

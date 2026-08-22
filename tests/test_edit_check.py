@@ -676,3 +676,18 @@ def test_an_undecided_clause_with_no_kind_counts_as_a_gap():
     """A reader that cannot tell says it did not look, rather than assuming it
     did. An older analyzer emits no kind at all."""
     assert edit_check.coverage_gap([{"decided": False}]) == 1
+
+
+def test_the_trace_records_the_whole_path_not_just_the_name(tmp_path, monkeypatch):
+    """It held the basename until 2026-08-21, so nothing reading the trace
+    could tell a scratch file from real work. Every consumer kept its own
+    hand-written list of filenames to exclude, and one went stale within the
+    hour and reported a measurement whose entire signal was probe files."""
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    no_delegates(monkeypatch)
+    f = tmp_path / "sub" / "deep.py"
+    f.parent.mkdir(); f.write_text(CLEAN)
+    run_hook(payload(f), monkeypatch)
+    files = [json.loads(l).get("file") for l in log.read_text().splitlines()]
+    assert str(f) in files and "deep.py" not in files

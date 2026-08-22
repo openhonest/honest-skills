@@ -338,7 +338,7 @@ def assess(path: str) -> tuple[str, str] | None:
     trace("Stop:edit", "fired" if hits else "declined",
           f"{ran} of {CHECKS} ran, {Path(path).suffix or 'no suffix'}"
           + (f", {','.join(hits)}" if hits else ""),
-          file=os.path.basename(path))
+          file=path)
     if not any(f["verdict"] != "NOT_RUN" for f in findings):
         # Nothing surfaced. A check that did not run is not an observation
         # about this file, and announcing it here would put the tool's own
@@ -368,7 +368,7 @@ def settle(session: str) -> str:
             # firing did not, and a Stop hook that repeats itself is a Stop
             # hook that never lets the turn end.
             trace("Stop:edit", "declined", "already reported this content",
-                  file=os.path.basename(path))
+                  file=path)
             continue
         reported[path] = digest
         reports.append(report)
@@ -391,11 +391,11 @@ def main() -> int:
     if Path(path).suffix.lower() not in SOURCE:
         trace("PostToolUse:edit", "declined",
               f"not a checked extension: {Path(path).suffix or 'none'}",
-              file=os.path.basename(path))
+              file=path)
         return 0
     defer(KIND, path, session)
     trace("PostToolUse:edit", "deferred", "held until the writes settle",
-          file=os.path.basename(path))
+          file=path)
     return 0                          # silence: the file may still be moving
 
 

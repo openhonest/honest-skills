@@ -68,6 +68,13 @@ def trace(event: str, verdict: str, why: str, **facts: object) -> None:
         return
     try:
         with open(path, "a") as fh:
+            # `file` carries the whole path. It held the basename until
+            # 2026-08-21, which meant nothing reading the trace could tell a
+            # scratch file from real work, so every consumer kept its own
+            # hand-written list of filenames to exclude. One such list went
+            # stale within the hour and reported a measurement whose entire
+            # signal was the writer's own probe files.
+            #
             # The session and the version were added the same evening, after
             # a question the trace could not answer: whether a session that had
             # not restarted was running the new hooks. Rows from every session

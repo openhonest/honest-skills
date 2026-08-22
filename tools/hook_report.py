@@ -61,6 +61,21 @@ def render(rows: list[dict]) -> str:
     return "\n".join(out)
 
 
+SCRATCH = ("/tmp/", "/private/tmp/", "/var/folders/")
+
+
+def is_real_work(row: dict) -> bool:
+    """False for a file under a scratch or temp tree.
+
+    Classified by path rather than by name. A hand-written list of filenames to
+    exclude went stale within an hour on 2026-08-21 and reported a measurement
+    whose entire signal was the writer's own probe files. A rule that has to be
+    updated by hand to stay correct will be wrong most of the time.
+    """
+    f = row.get("file") or ""
+    return not any(f.startswith(s) for s in SCRATCH)
+
+
 def span(rows: list[dict]) -> str:
     """The period the rows cover, so a count can become a rate.
 
@@ -152,7 +167,7 @@ def main() -> int:
     if not path:
         print("no path given and HONEST_HOOK_TRACE is unset")
         return 2
-    rows = read(path)
+    rows = [r for r in read(path) if is_real_work(r)]
     window = rows[-last:] if last else rows
     print(render(window))
     print(settled(window))
