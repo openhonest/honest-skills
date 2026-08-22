@@ -96,7 +96,7 @@ def test_a_dirty_file_written_by_a_script_surfaces_when_the_turn_ends(
     writes went through Bash and were invisible to the Write and Edit hooks."""
     (tmp_path / "x.py").write_text(DIRTY)
     monkeypatch.setattr(bw.edit_check, "honest_code_finding",
-                        lambda p: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
+                        lambda p, d=None: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
                                    "detail": "d", "action": "a"})
     assert run_hook(payload(tmp_path), monkeypatch) == (0, "")
     err = io.StringIO()
@@ -107,7 +107,7 @@ def test_a_dirty_file_written_by_a_script_surfaces_when_the_turn_ends(
 
 def test_a_clean_file_is_silent(tmp_path, monkeypatch):
     (tmp_path / "x.py").write_text(CLEAN)
-    monkeypatch.setattr(bw.edit_check, "honest_code_finding", lambda p: None)
+    monkeypatch.setattr(bw.edit_check, "honest_code_finding", lambda p, d=None: None)
     assert run_hook(payload(tmp_path), monkeypatch) == (0, "")
 
 

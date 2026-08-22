@@ -41,6 +41,17 @@ NO_ANALYZER = {"indicator": "L1.21", "verdict": "NOT_RUN",
                "action": "this file was not checked against the Honest Code clauses"}
 
 
+def hc(path):
+    """The L1.21 finding for one file, running the analyzer as the hook does.
+
+    The hook parses the analyzer's response once and reads both the finding and
+    the file's grade from it, so a test that wants only the finding still goes
+    through the same single call.
+    """
+    data, failed = edit_check.analyzer_says(path)
+    return failed if data is None else edit_check.honest_code_finding(path, data)
+
+
 def payload(path):
     return json.dumps({"session_id": "s1", "tool_name": "Write",
                        "tool_input": {"file_path": str(path)}})
@@ -77,7 +88,7 @@ def no_analyzer(monkeypatch):
 
 def no_delegates(monkeypatch):
     """Silence the one subprocess check, for tests about the local two."""
-    monkeypatch.setattr(edit_check, "honest_code_finding", lambda p: None)
+    monkeypatch.setattr(edit_check, "honest_code_finding", lambda p, d=None: None)
 
 
 # --- silence, which is the point --------------------------------------------
@@ -182,7 +193,7 @@ def test_findings_for_keeps_the_checks_that_did_not_run(tmp_path, monkeypatch):
     count is the whole of the honesty."""
     no_analyzer(monkeypatch)
     f = tmp_path / "ok.py"; f.write_text(CLEAN)
-    got = edit_check.findings_for(str(f), CLEAN)
+    got = edit_check.findings_for(str(f), CLEAN)[0]
     assert [g["verdict"] for g in got] == ["NOT_RUN"]
     assert {g["indicator"] for g in got} == {"L1.21"}
 
@@ -279,7 +290,7 @@ def test_a_clean_file_produces_no_honest_code_finding(monkeypatch):
     monkeypatch.setattr(edit_check.subprocess, "run", fake_honest(
         {"clauses": [{"code": "L1.21.1", "decided": True, "findings": []}],
          "decided_clauses": 1, "unreadable_reason": ""}))
-    assert edit_check.honest_code_finding("x.py") is None
+    assert hc("x.py") is None
 
 
 def test_a_violation_carries_its_clause_line_and_remedy(monkeypatch):
@@ -290,7 +301,7 @@ def test_a_violation_carries_its_clause_line_and_remedy(monkeypatch):
              "detail": "`timeout=30` absorbs the caller's omission",
              "instead": "make absence an explicit case of a bounded type"}]}],
          "decided_clauses": 14, "unreadable_reason": ""}))
-    f = edit_check.honest_code_finding("x.py")
+    f = hc("x.py")
     assert f["verdict"] == "OUT_OF_SPEC"
     assert "L1.21.14" in f["detail"] and "line 5" in f["detail"]
     assert "bounded type" in f["action"]
@@ -306,7 +317,7 @@ def test_the_clause_coverage_is_read_not_assumed(monkeypatch):
                                     "detail": "d", "instead": "i"}] if i == 1 else []}
                      for i in range(1, 20)],
          "decided_clauses": 14, "unreadable_reason": ""}))
-    f = edit_check.honest_code_finding("x.py")
+    f = hc("x.py")
     assert "14 of 19 clauses decided" in f["detail"]
 
 
@@ -316,7 +327,7 @@ def test_an_unreadable_file_is_not_a_clean_file(monkeypatch):
     monkeypatch.setattr(edit_check.subprocess, "run", fake_honest(
         {"clauses": [], "decided_clauses": 0,
          "unreadable_reason": "SyntaxError: unexpected EOF"}))
-    f = edit_check.honest_code_finding("x.py")
+    f = hc("x.py")
     assert f["verdict"] == "NOT_RUN"
     assert "not the same as clean" in f["action"]
 
@@ -330,7 +341,7 @@ def test_a_wall_of_findings_is_truncated_and_says_so(monkeypatch):
             {"clause": "L1.21.8", "line": n, "detail": "d", "instead": "i"}
             for n in range(30)]}],
          "decided_clauses": 14, "unreadable_reason": ""}))
-    f = edit_check.honest_code_finding("x.py")
+    f = hc("x.py")
     assert "30 Honest Code finding(s)" in f["detail"]
     assert "and 25 more, not shown" in f["detail"]
 
@@ -342,12 +353,12 @@ def test_the_provisional_caveat_is_carried(monkeypatch):
         {"clauses": [{"code": "L1.21.8", "decided": True, "findings": [
             {"clause": "L1.21.8", "line": 1, "detail": "d", "instead": "i"}]}],
          "decided_clauses": 14, "unreadable_reason": ""}))
-    assert "expert judgment" in edit_check.honest_code_finding("x.py")["caveat"]
+    assert "expert judgment" in hc("x.py")["caveat"]
 
 
 def test_a_missing_analyzer_leaves_l1_21_not_run(monkeypatch):
     no_analyzer(monkeypatch)
-    f = edit_check.honest_code_finding("x.py")
+    f = hc("x.py")
     assert f["verdict"] == "NOT_RUN" and "not on PATH" in f["detail"]
 
 
@@ -355,7 +366,7 @@ def test_an_unreadable_response_leaves_l1_21_not_run(monkeypatch):
     monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
     monkeypatch.setattr(edit_check.subprocess, "run",
                         lambda *a, **k: type("R", (), {"stdout": "not json"})())
-    assert edit_check.honest_code_finding("x.py")["verdict"] == "NOT_RUN"
+    assert hc("x.py")["verdict"] == "NOT_RUN"
 
 
 def test_an_analyzer_that_will_not_run_leaves_l1_21_not_run(monkeypatch):
@@ -363,7 +374,7 @@ def test_an_analyzer_that_will_not_run_leaves_l1_21_not_run(monkeypatch):
         raise OSError("no")
     monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/usr/bin/fake")
     monkeypatch.setattr(edit_check.subprocess, "run", boom)
-    assert edit_check.honest_code_finding("x.py")["verdict"] == "NOT_RUN"
+    assert hc("x.py")["verdict"] == "NOT_RUN"
 
 
 def test_the_hook_never_reimplements_the_honest_code_clauses():
@@ -448,7 +459,7 @@ def test_only_findings_on_changed_lines_are_reported(monkeypatch):
         type("R", (), {"returncode": 0,
                        "stdout": "@@ -5,0 +5,1 @@\n" if cmd[0] == "git"
                                  else json.dumps(payload)})())
-    f = edit_check.honest_code_finding("x.py")
+    f = hc("x.py")
     assert "yours" in f["detail"] and "ancient" not in f["detail"]
     assert "1 elsewhere in the file not shown" in f["detail"]
 
@@ -464,7 +475,7 @@ def test_a_file_whose_old_findings_are_untouched_is_silent(monkeypatch):
         type("R", (), {"returncode": 0,
                        "stdout": "@@ -5,0 +5,1 @@\n" if cmd[0] == "git"
                                  else json.dumps(payload)})())
-    assert edit_check.honest_code_finding("x.py") is None
+    assert hc("x.py") is None
 
 
 def test_an_untracked_file_has_no_baseline_and_reports_everything(monkeypatch):
@@ -522,7 +533,7 @@ def test_a_restore_produces_no_finding_at_all(monkeypatch):
             return type("R", (), {"returncode": 0, "stdout": ""})()
         return type("R", (), {"returncode": 0, "stdout": json.dumps(payload)})()
     monkeypatch.setattr(edit_check.subprocess, "run", run)
-    assert edit_check.honest_code_finding("x.py") is None
+    assert hc("x.py") is None
 
 
 def test_a_stubbornly_untracked_file_still_reports(monkeypatch):
@@ -537,7 +548,7 @@ def test_a_stubbornly_untracked_file_still_reports(monkeypatch):
             return type("R", (), {"returncode": 1, "stdout": ""})()
         return type("R", (), {"returncode": 0, "stdout": json.dumps(payload)})()
     monkeypatch.setattr(edit_check.subprocess, "run", run)
-    assert "new" in edit_check.honest_code_finding("x.py")["detail"]
+    assert "new" in hc("x.py")["detail"]
 
 
 def test_a_diff_that_errors_after_the_file_is_tracked_reports_everything(monkeypatch):
@@ -608,7 +619,7 @@ def test_a_changed_file_is_reported_again(tmp_path, monkeypatch):
     """The guard is on the content, not the path. Editing the file and leaving
     a different violation on the lines you touched is new news."""
     monkeypatch.setattr(edit_check, "honest_code_finding",
-                        lambda p: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
+                        lambda p, d=None: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
                                    "detail": "d", "action": "a"})
     f = tmp_path / "a.py"; f.write_text(CLEAN)
     _fire(payload(f), monkeypatch)
@@ -654,7 +665,7 @@ def test_a_stale_session_is_told_so_alongside_the_finding(tmp_path, monkeypatch)
                         lambda: "this session runs 0.13.1, 0.22.0 is installed.")
     f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
     no_delegates(monkeypatch)
-    report = edit_check.render(str(f), edit_check.findings_for(str(f), f.read_text()))
+    report = edit_check.render(str(f), edit_check.findings_for(str(f), f.read_text())[0])
     assert "0.13.1" in report.splitlines()[1]
 
 
@@ -789,7 +800,7 @@ def test_a_file_the_reader_cannot_read_is_not_reported_as_clean(
     monkeypatch.setattr(edit_check.subprocess, "run",
                         lambda *a, **k: type("R", (), {"stdout": payload_json})())
     f = tmp_path / "app.js"; f.write_text("class A extends B {}\n")
-    got = edit_check.honest_code_finding(str(f))
+    got = hc(str(f))
     assert got["verdict"] == "NOT_RUN"
     assert "16 of 17 clauses could not read this file" in got["detail"]
 
@@ -808,7 +819,7 @@ def test_a_python_file_with_no_findings_stays_silent(tmp_path, monkeypatch):
     monkeypatch.setattr(edit_check.subprocess, "run",
                         lambda *a, **k: type("R", (), {"stdout": payload_json})())
     f = tmp_path / "app.py"; f.write_text(CLEAN)
-    assert edit_check.honest_code_finding(str(f)) is None
+    assert hc(str(f)) is None
 
 
 def test_the_coverage_gap_is_announced_once_per_language_per_session(
@@ -875,7 +886,7 @@ def test_a_silenced_finding_is_reported_as_silenced_not_as_clean(
         "decided_clauses": 1})
     monkeypatch.setattr(edit_check, "changed_lines", lambda p: None)
     f = tmp_path / "a.py"; f.write_text(CLEAN)
-    got = edit_check.honest_code_finding(str(f))
+    got = hc(str(f))
     assert got["verdict"] == "SUPPRESSED"
     assert "silenced on lines you changed, not fixed" in got["detail"]
     assert "legacy caller needs None" in got["detail"]
@@ -888,7 +899,7 @@ def test_the_reason_travels_with_the_suppression(tmp_path, monkeypatch):
          "allowed": [{"line": 9}]}], "decided_clauses": 1})
     monkeypatch.setattr(edit_check, "changed_lines", lambda p: None)
     f = tmp_path / "a.py"; f.write_text(CLEAN)
-    assert "no reason given" in edit_check.honest_code_finding(str(f))["detail"]
+    assert "no reason given" in hc(str(f))["detail"]
 
 
 def test_a_suppression_on_a_line_this_edit_did_not_touch_is_not_reported(
@@ -900,7 +911,7 @@ def test_a_suppression_on_a_line_this_edit_did_not_touch_is_not_reported(
          "allowed": [{"line": 400, "reason": "old"}]}], "decided_clauses": 1})
     monkeypatch.setattr(edit_check, "changed_lines", lambda p: {7, 8})
     f = tmp_path / "a.py"; f.write_text(CLEAN)
-    assert edit_check.honest_code_finding(str(f)) is None
+    assert hc(str(f)) is None
 
 
 def test_a_real_finding_outranks_a_suppression(tmp_path, monkeypatch):
@@ -912,7 +923,7 @@ def test_a_real_finding_outranks_a_suppression(tmp_path, monkeypatch):
          "allowed": [{"line": 9, "reason": "r"}]}], "decided_clauses": 1})
     monkeypatch.setattr(edit_check, "changed_lines", lambda p: None)
     f = tmp_path / "a.py"; f.write_text(CLEAN)
-    assert edit_check.honest_code_finding(str(f))["verdict"] == "OUT_OF_SPEC"
+    assert hc(str(f))["verdict"] == "OUT_OF_SPEC"
 
 
 def test_the_record_calls_a_suppression_neither_fired_nor_clean(
@@ -923,7 +934,7 @@ def test_the_record_calls_a_suppression_neither_fired_nor_clean(
     log = tmp_path / "t.jsonl"
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
     monkeypatch.setattr(edit_check, "honest_code_finding",
-                        lambda p: {"indicator": "L1.21", "verdict": "SUPPRESSED",
+                        lambda p, d=None: {"indicator": "L1.21", "verdict": "SUPPRESSED",
                                    "detail": "1 finding(s) silenced", "action": "a"})
     f = tmp_path / "a.py"; f.write_text(CLEAN)
     run_hook(payload(f), monkeypatch)
@@ -938,7 +949,7 @@ def test_the_record_names_which_clause_fired(tmp_path, monkeypatch):
     log = tmp_path / "t.jsonl"
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
     monkeypatch.setattr(edit_check, "honest_code_finding",
-                        lambda p: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
+                        lambda p, d=None: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
                                    "detail": "d", "action": "a",
                                    "clauses": ["L1.21.14", "L1.21.4"]})
     f = tmp_path / "a.py"; f.write_text(CLEAN)
@@ -967,7 +978,7 @@ def test_clauses_are_ordered_by_number_not_as_text(tmp_path, monkeypatch):
     log = tmp_path / "t.jsonl"
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
     monkeypatch.setattr(edit_check, "honest_code_finding",
-                        lambda p: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
+                        lambda p, d=None: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
                                    "detail": "d", "action": "a",
                                    "clauses": ["L1.21.14", "L1.21.2", "L1.21.4"]})
     f = tmp_path / "a.py"; f.write_text(CLEAN)
@@ -982,7 +993,7 @@ def test_clauses_are_ordered_by_number_not_as_text(tmp_path, monkeypatch):
 def _unit(tmp_path, monkeypatch, finding, ran_all=True):
     log = tmp_path / "t.jsonl"
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
-    monkeypatch.setattr(edit_check, "honest_code_finding", lambda p: finding)
+    monkeypatch.setattr(edit_check, "honest_code_finding", lambda p, d=None: finding)
     f = tmp_path / "a.py"; f.write_text(CLEAN)
     run_hook(payload(f), monkeypatch)
     rows = [json.loads(l) for l in log.read_text().splitlines()]
@@ -1031,7 +1042,7 @@ def test_a_suppression_outranks_a_finding_in_the_unit_state(
     log = tmp_path / "t.jsonl"
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
     monkeypatch.setattr(edit_check, "honest_code_finding",
-                        lambda p: {"indicator": "L1.21", "verdict": "SUPPRESSED",
+                        lambda p, d=None: {"indicator": "L1.21", "verdict": "SUPPRESSED",
                                    "detail": "1 silenced", "action": "a"})
     f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)   # also trips L1.17
     run_hook(payload(f), monkeypatch)
@@ -1090,7 +1101,7 @@ def test_a_line_scoped_finding_still_repeats_on_new_content(
     """Only whole-file findings are held back. A finding about the lines just
     written is new news every time those lines change."""
     monkeypatch.setattr(edit_check, "honest_code_finding",
-                        lambda p: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
+                        lambda p, d=None: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
                                    "detail": "d", "action": "a"})
     f = tmp_path / "a.py"; f.write_text(CLEAN)
     _fire(payload(f), monkeypatch)
@@ -1107,7 +1118,7 @@ def test_unchanged_content_is_not_reported_twice(tmp_path, monkeypatch):
     log = tmp_path / "t.jsonl"
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
     monkeypatch.setattr(edit_check, "honest_code_finding",
-                        lambda p: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
+                        lambda p, d=None: {"indicator": "L1.21", "verdict": "OUT_OF_SPEC",
                                    "detail": "d", "action": "a"})
     f = tmp_path / "a.py"; f.write_text(CLEAN)
     _fire(payload(f), monkeypatch)
@@ -1213,7 +1224,7 @@ def test_a_boundary_declaration_that_withheld_a_finding_counts(
         "decided_clauses": 1})
     monkeypatch.setattr(edit_check, "changed_lines", lambda p: None)
     f = tmp_path / "a.py"; f.write_text(CLEAN)
-    got = edit_check.honest_code_finding(str(f))
+    got = hc(str(f))
     assert got["verdict"] == "SUPPRESSED" and "line 12" in got["detail"]
 
 
@@ -1226,4 +1237,4 @@ def test_an_analyzer_that_does_not_report_declarations_reads_as_none(
         {"code": "L1.21.4", "decided": True, "findings": []}], "decided_clauses": 1})
     monkeypatch.setattr(edit_check, "changed_lines", lambda p: None)
     f = tmp_path / "a.py"; f.write_text(CLEAN)
-    assert edit_check.honest_code_finding(str(f)) is None
+    assert hc(str(f)) is None

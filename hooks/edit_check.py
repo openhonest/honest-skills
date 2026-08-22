@@ -226,7 +226,31 @@ def coverage_gap(clauses: list[dict]) -> int:
                and c.get("undecided") != "never")
 
 
-def honest_code_finding(path: str) -> dict | None:
+def analyzer_says(path: str) -> tuple[dict | None, dict | None]:
+    """One run of the analyzer, parsed once.
+
+    Returns the response and, when it could not be had, the NOT_RUN finding
+    that explains why. Split out so the finding and the grade come from a
+    single run: reading them separately ran the analyzer twice per file, which
+    on a twenty-file turn was nine seconds spent to learn the same thing.
+    """
+    exe = shutil.which(ANALYZER)
+    if exe is None:
+        return None, {"indicator": "L1.21", "verdict": "NOT_RUN",
+                      "detail": f"{ANALYZER} is not on PATH",
+                      "action": "this file was not checked against the Honest "
+                                "Code clauses"}
+    try:
+        r = subprocess.run([exe, "--honest-code", path, "--format", "json"],
+                           capture_output=True, text=True, timeout=20)
+        return json.loads(r.stdout), None
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None, {"indicator": "L1.21", "verdict": "NOT_RUN",
+                      "detail": "the analyzer ran and its output could not be read",
+                      "action": "run it by hand on this file to see why"}
+
+
+def honest_code_finding(path: str, data: dict) -> dict | None:
     """L1.21, the Honest Code clauses, measured on this one file.
 
     Delegated like L1.18 and for the same reason. It is the one indicator
@@ -240,20 +264,6 @@ def honest_code_finding(path: str) -> dict | None:
     decided 14 of 19 when measured, which is not the number that was quoted to
     me, so the field is the authority and the memory is not.
     """
-    exe = shutil.which(ANALYZER)
-    if exe is None:
-        return {"indicator": "L1.21", "verdict": "NOT_RUN",
-                "detail": f"{ANALYZER} is not on PATH",
-                "action": "this file was not checked against the Honest Code clauses"}
-    try:
-        r = subprocess.run([exe, "--honest-code", path, "--format", "json"],
-                           capture_output=True, text=True, timeout=20)
-        data = json.loads(r.stdout)
-    except (OSError, subprocess.SubprocessError, ValueError):
-        return {"indicator": "L1.21", "verdict": "NOT_RUN",
-                "detail": "the analyzer ran and its output could not be read",
-                "action": "run it by hand on this file to see why"}
-
     if data.get("unreadable_reason"):
         # A file nobody could read is not a file with no violations.
         return {"indicator": "L1.21", "verdict": "NOT_RUN",
@@ -347,14 +357,18 @@ def honest_code_finding(path: str) -> dict | None:
                       "clauses this file could not decide are outside the score"}
 
 
-def findings_for(path: str, text: str) -> list[dict]:
+def findings_for(path: str, text: str) -> tuple[list[dict], dict]:
     """Every check's result, including the ones that did not run.
 
     Suppressing a NOT_RUN here would make the coverage count in render()
     impossible to compute, and the count is the whole of the honesty.
     """
-    return [f for f in (line_count_finding(text), whitespace_finding(text),
-                        honest_code_finding(path)) if f is not None]
+    data, failed = analyzer_says(path)
+    hc = failed if data is None else honest_code_finding(path, data)
+    grade = {} if data is None else {"conformity": data.get("conformity"),
+                                     "band": data.get("band")}
+    return ([f for f in (line_count_finding(text), whitespace_finding(text), hc)
+             if f is not None], grade)
 
 
 def render(path: str, findings: list[dict]) -> str:
@@ -438,7 +452,7 @@ def assess(path: str, session: str = "") -> tuple[str, str] | None:
         # The file is gone or unreadable. That is not a finding about the
         # code, and a hook that reports it teaches the reader to ignore hooks.
         return None
-    findings = findings_for(path, text)
+    findings, grade = findings_for(path, text)
     # An unresolved finding keeps being reported until it is resolved. It was
     # briefly suppressed after the first telling, on the reasoning that
     # repetition trains skimming. Adam overruled that and he was right twice
@@ -498,7 +512,8 @@ def assess(path: str, session: str = "") -> tuple[str, str] | None:
           f"{ran} of {CHECKS} ran, {Path(path).suffix or 'no suffix'}"
           + (f", {','.join(hits)}" if hits else ""),
           file=path, unit=unit, checks_ran=ran, checks=CHECKS,
-          clauses=clauses or None)
+          clauses=clauses or None,
+          conformity=grade.get("conformity"), band=grade.get("band"))
     if not any(f["verdict"] != "NOT_RUN" for f in findings):
         # A coverage gap on THIS file is an observation about this file, unlike
         # a missing binary, which says nothing about it. A Python parser over a
