@@ -239,6 +239,34 @@ def coverage_gap(clauses: list[dict]) -> int:
                and c.get("undecided") != "never")
 
 
+# The keys this hook reads out of the analyzer's per-file response. audit
+# shipped 1.0.0 promising a stable JSON shape, then changed L1.21's shape twice
+# in a day and put it outside that promise in the changelog. So the shape moves
+# by declaration, and reading it with .get() everywhere means a field that goes
+# away degrades to the flattering default: absent blocks read as no blocks,
+# absent grade reads as no grade. That is the exact failure this hook exists to
+# report, in the hook.
+# Only the keys whose ABSENCE would be misread as good news. `clauses` gone
+# means no findings, and `unexamined` gone means no embedded blocks; both read
+# as a clean file. A missing `band` or `conformity` costs a grade in the record
+# and cannot be mistaken for a pass, so it is not worth refusing over.
+# One key. `clauses` gone means no findings, which reads as a clean file, and
+# it has been in every version of this response. `unexamined` is hours old, so
+# refusing on it would refuse every older analyzer for being older, and a
+# missing `band` costs a grade in the record and cannot be mistaken for a pass.
+NEEDED = ("clauses",)
+
+
+def shape_complaint(data: dict) -> str:
+    """What this hook expected from the analyzer and did not get.
+
+    Empty when the response carries everything read here. A response missing a
+    key is not a file with nothing to say about it.
+    """
+    missing = [k for k in NEEDED if k not in data]
+    return ", ".join(missing)
+
+
 def analyzer_says_all(paths: list[str]) -> dict[str, dict]:
     """One analyzer run for every file in the turn, keyed by path.
 
@@ -282,7 +310,14 @@ def analyzer_says(path: str) -> tuple[dict | None, dict | None]:
     try:
         r = subprocess.run([exe, "--honest-code", path, "--format", "json"],
                            capture_output=True, text=True, timeout=20)
-        return json.loads(r.stdout), None
+        data = json.loads(r.stdout)
+        # One path returns an object and several return an array.
+        # Reading only the object shape would treat an array as a
+        # response with every key missing, which is a true statement
+        # about a list and a wrong one about the file.
+        if isinstance(data, list):
+            data = data[0] if data else {}
+        return data, None
     except (OSError, subprocess.SubprocessError, ValueError):
         return None, {"indicator": "L1.21", "verdict": "NOT_RUN",
                       "detail": "the analyzer ran and its output could not be read",
@@ -303,6 +338,13 @@ def honest_code_finding(path: str, data: dict) -> dict | None:
     decided 14 of 19 when measured, which is not the number that was quoted to
     me, so the field is the authority and the memory is not.
     """
+    missing = shape_complaint(data)
+    if missing:
+        return {"indicator": "L1.21", "verdict": "NOT_RUN",
+                "detail": f"the analyzer's response is missing {missing}, so "
+                          f"this hook could not read it",
+                "action": "the analyzer's shape has moved; nothing here was "
+                          "checked, which is not the same as clean"}
     if data.get("unreadable_reason"):
         # A file nobody could read is not a file with no violations.
         return {"indicator": "L1.21", "verdict": "NOT_RUN",

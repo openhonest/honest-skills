@@ -1370,3 +1370,41 @@ def test_a_file_with_nothing_unexamined_is_unaffected(tmp_path, monkeypatch):
     _with_unexamined(monkeypatch, [])
     f = tmp_path / "m.py"; f.write_text(CLEAN)
     assert run_hook(payload(f), monkeypatch) == (0, "")
+
+
+# --- the analyzer's shape is declared unstable, so notice when it moves ------
+
+def test_a_response_missing_its_findings_key_is_not_a_clean_file(monkeypatch):
+    """audit shipped 1.0.0 promising a stable JSON shape, then changed L1.21's
+    shape twice in a day and put it outside that promise. Read with .get()
+    throughout, a key that goes away degrades to the flattering default: no
+    clauses means no findings means clean."""
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/bin/true")
+    monkeypatch.setattr(edit_check.subprocess, "run",
+                        lambda *a, **k: type("R", (), {"stdout": json.dumps(
+                            {"path": "x.py", "conformity": 100.0,
+                             "band": "Healthy"})})())
+    got = hc("x.py")
+    assert got["verdict"] == "NOT_RUN"
+    assert "missing clauses" in got["detail"]
+
+
+def test_a_response_carrying_findings_is_read_normally(monkeypatch):
+    """Only the key whose absence reads as good news is refused. A missing
+    grade costs a record field and cannot be mistaken for a pass."""
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/bin/true")
+    monkeypatch.setattr(edit_check.subprocess, "run",
+                        lambda *a, **k: type("R", (), {"stdout": json.dumps(
+                            {"clauses": [], "decided_clauses": 14})})())
+    assert hc("x.py") is None
+
+
+def test_an_array_response_for_one_path_is_read_as_that_file(monkeypatch):
+    """One path returns an object and several return an array. Reading only the
+    object shape would treat an array as a response with every key missing,
+    which is a true statement about a list and a wrong one about the file."""
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/bin/true")
+    monkeypatch.setattr(edit_check.subprocess, "run",
+                        lambda *a, **k: type("R", (), {"stdout": json.dumps(
+                            [{"clauses": [], "decided_clauses": 14}])})())
+    assert hc("x.py") is None
