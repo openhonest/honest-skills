@@ -328,6 +328,18 @@ def honest_code_finding(path: str, data: dict) -> dict | None:
     silenced = [a for c in clauses
                 for a in (c.get("allowed") or []) + (c.get("declared") or [])]
     hits = [f for c in clauses for f in (c.get("findings") or [])]
+    # A block of another language held in a string is checked now, not merely
+    # noticed, so what comes back is findings rather than a label. They are
+    # real violations in real code and they count as such.
+    #
+    # Files carrying such a block are no longer held out of the rate. audit's
+    # answer to whether a block that IS the file's subject can be told from one
+    # the file ships was no, not from the source alone, and excluding them
+    # moved a number for a reason nobody reading it could see.
+    embedded = [{**f, "embedded": b.get("language")}
+                for b in (data.get("unexamined") or [])
+                for f in (b.get("findings") or [])]
+    hits = hits + embedded
     # Scoped only when there is something to scope. Asking git on every file
     # made the call unconditional, which is work nobody asked for on the
     # common path.
@@ -379,7 +391,9 @@ def honest_code_finding(path: str, data: dict) -> dict | None:
                    key=lambda c: [int(n) if n.isdigit() else 0
                                   for n in c.replace("L", "").split(".")])
     shown = hits[:MAX_CLAUSE_FINDINGS]
-    lines = [f"{h.get('clause')} line {h.get('line')}: {h.get('detail')}"
+    lines = [f"{h.get('clause')} line {h.get('line')}"
+             + (f" (in embedded {h['embedded']})" if h.get("embedded") else "")
+             + f": {h.get('detail')}"
              for h in shown]
     if len(hits) > len(shown):
         lines.append(f"and {len(hits) - len(shown)} more, not shown")
@@ -549,10 +563,7 @@ def assess(path: str, session: str = "",
         unit = "suppressed"
     elif any(f["verdict"] == "OUT_OF_SPEC" for f in findings):
         unit = "nonconforming"
-    elif ran < CHECKS or grade.get("unexamined"):
-        # A file carrying content no clause examined is not a conforming unit.
-        # It is a partial measurement, and counting it as conforming would put
-        # the unread half in the numerator.
+    elif ran < CHECKS:
         unit = "not_measured"
     else:
         unit = "conformed"
@@ -591,18 +602,6 @@ def assess(path: str, session: str = "",
         # Said once per language per session: never is a false clean bill on
         # every JavaScript file, and every write is noise to someone writing
         # JavaScript all day.
-        unread = grade.get("unexamined") or []
-        if unread and said_before(session, f"unexamined:{path}"):
-            first = unread[0]
-            return (render(path, [{
-                "indicator": "L1.21", "verdict": "NOT_RUN",
-                "detail": f"{sum(u.get('lines', 0) for u in unread)} line(s) in "
-                          f"this file parse as {first.get('language')} and no "
-                          f"clause examined them, first at line "
-                          f"{first.get('line')}",
-                "action": "the score above covers the rest of the file, not "
-                          "this"}]),
-                    hashlib.sha256(text.encode()).hexdigest())
         gap = next((f for f in findings if f["verdict"] == "NOT_RUN"
                     and "could not read this file" in f["detail"]), None)
         if gap and announce_once(session, Path(path).suffix.lower()):

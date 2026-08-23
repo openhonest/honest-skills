@@ -1327,41 +1327,43 @@ def _with_unexamined(monkeypatch, unexamined):
                              for p in a[0] if str(p).endswith(".py")])})())
 
 
-def test_a_file_carrying_unread_content_is_not_a_conforming_unit(
-        tmp_path, monkeypatch):
-    """A .py file whose content is JavaScript in a string scored 100 per cent
-    over 14 decided clauses with nothing marked unreadable. The share was right
-    about the Python and silent about the rest, and decided_clauses does not
-    help: it reads 14, which looks normal."""
+def test_a_finding_inside_an_embedded_block_is_a_finding(tmp_path, monkeypatch):
+    """A block of another language held in a string is checked now, not merely
+    noticed, so what comes back is findings rather than a label. They are real
+    violations in real code and they count as such."""
     log = tmp_path / "t.jsonl"
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
-    _with_unexamined(monkeypatch, [{"language": "javascript", "line": 1, "lines": 14}])
-    f = tmp_path / "m.py"; f.write_text(CLEAN)
-    run_hook(payload(f), monkeypatch)
-    row = next(json.loads(l) for l in log.read_text().splitlines()
-               if json.loads(l).get("event") == "Stop:edit" and "unit" in json.loads(l))
-    assert row["unit"] == "not_measured"
-    assert row["conformity"] == 100.0        # the score itself stays true
-    assert row["unexamined"][0]["language"] == "javascript"
-
-
-def test_the_writer_is_told_what_was_never_examined(tmp_path, monkeypatch):
-    _with_unexamined(monkeypatch, [{"language": "javascript", "line": 3, "lines": 8}])
+    _with_unexamined(monkeypatch, [
+        {"language": "javascript", "line": 2, "lines": 9,
+         "also_accepted_by": ["typescript"],
+         "findings": [{"clause": "L1.21.5", "line": 3,
+                       "detail": "inherits from Base", "instead": "compose"}]}])
+    monkeypatch.setattr(edit_check, "changed_lines", lambda p: None)
     f = tmp_path / "m.py"; f.write_text(CLEAN)
     code, err = run_hook(payload(f), monkeypatch)
     assert code == 2
-    assert "8 line(s) in this file parse as javascript" in err
-    assert "first at line 3" in err
+    assert "in embedded javascript" in err and "L1.21.5" in err
+    row = next(json.loads(l) for l in log.read_text().splitlines()
+               if json.loads(l).get("event") == "Stop:edit" and "unit" in json.loads(l))
+    assert row["unit"] == "nonconforming"
 
 
-def test_it_is_said_once_per_file(tmp_path, monkeypatch):
-    """Said on every edit it would be the nagging that trains skimming, and
-    unlike a violation there is nothing the writer can do to clear it."""
-    _with_unexamined(monkeypatch, [{"language": "javascript", "line": 1, "lines": 8}])
+def test_a_block_that_fires_nothing_is_not_held_against_the_file(
+        tmp_path, monkeypatch):
+    """A SQL query in a database driver used to pull its file out of the rate.
+    audit's answer to whether a block that IS the file's subject can be told
+    from one the file ships was no, not from the source alone, and excluding
+    them moved a number for a reason nobody reading it could see."""
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    _with_unexamined(monkeypatch, [
+        {"language": "ruby", "line": 4, "lines": 12, "findings": []}])
+    monkeypatch.setattr(edit_check, "changed_lines", lambda p: None)
     f = tmp_path / "m.py"; f.write_text(CLEAN)
-    assert run_hook(payload(f), monkeypatch)[0] == 2
-    f.write_text(CLEAN + "# more\n")
     assert run_hook(payload(f), monkeypatch) == (0, "")
+    row = next(json.loads(l) for l in log.read_text().splitlines()
+               if json.loads(l).get("event") == "Stop:edit" and "unit" in json.loads(l))
+    assert row["unit"] == "conformed"
 
 
 def test_a_file_with_nothing_unexamined_is_unaffected(tmp_path, monkeypatch):
