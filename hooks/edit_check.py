@@ -147,12 +147,25 @@ WHOLE_FILE = {"L1.17", "L1.16"}
 
 
 def line_count_finding(text: str) -> dict | None:
-    n = len(text.splitlines())
-    if n <= LINE_LIMIT:
-        return None
-    return {"indicator": "L1.17", "verdict": "OUT_OF_SPEC",
-            "detail": f"{n} lines, over the {LINE_LIMIT}-line threshold",
-            "action": "split it, or accept it deliberately"}
+    """Removed. L1.17 has an owner and this was not it.
+
+    This counted `len(text.splitlines())` against 1000. The analyzer's own
+    L1.17 counts code lines, subtracting large data literals, because a file
+    that is big because it holds a table is not the god-file smell the
+    indicator is about.
+
+    Same indicator name, same threshold, different measure, and they disagreed
+    in the direction that reads as authoritative. `lang_spec.py` is a
+    nine-language vocabulary table: 1113 raw lines, 336 code lines. The
+    repository gate passes it and this hook reported it as over the limit, on
+    2026-08-22, to the session that owns the file.
+
+    Nothing replaces it here. The per-file response carries no line count, so
+    asking for the right number is a change on the analyzer's side, and a
+    second implementation of a measure is what produced the wrong report in the
+    first place. Silence is the honest state until the authority can be asked.
+    """
+    return None
 
 
 def whitespace_finding(text: str) -> dict | None:

@@ -36,6 +36,10 @@ edit_check = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(edit_check)
 
 CLEAN = "def f(x):\n    return x + 1\n"
+# Trips the whitespace check, which is this hook's own. The long-file
+# trigger these tests used belonged to L1.17, which has an owner and it
+# was not this hook.
+MESSY = "x = 1  \ny = 2  \nz = 3  \n"
 NO_ANALYZER = {"indicator": "L1.21", "verdict": "NOT_RUN",
                "detail": "slop-audit-l1 is not on PATH",
                "action": "this file was not checked against the Honest Code clauses"}
@@ -156,17 +160,17 @@ def test_a_real_finding_carries_the_absence_with_it(tmp_path, monkeypatch):
     """Silent alone, reported alongside. The reader is about to act on a list,
     so the list has to say what it did not look at."""
     no_analyzer(monkeypatch)
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    f = tmp_path / "big.py"; f.write_text(MESSY)
     code, err = run_hook(payload(f), monkeypatch)
     assert code == 2
-    assert "L1.17" in err and "NOT_RUN" in err and "L1.21" in err
+    assert "L1.16" in err and "NOT_RUN" in err and "L1.21" in err
 
 
 def test_every_report_states_its_coverage_before_its_content(tmp_path, monkeypatch):
     """A findings list with no coverage stated is a list claiming to be
     complete."""
     no_analyzer(monkeypatch)
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    f = tmp_path / "big.py"; f.write_text(MESSY)
     first = run_hook(payload(f), monkeypatch)[1].splitlines()[0]
     assert first == "honest-code: 2 of 3 checks ran on big.py"
 
@@ -175,7 +179,7 @@ def test_coverage_counts_checks_that_ran_not_findings_that_fired():
     """A check that ran and passed leaves no finding, so counting the findings
     counted it as not having run. That reported "1 of 4" when three had."""
     out = edit_check.render("a/big.py", [
-        {"indicator": "L1.17", "verdict": "OUT_OF_SPEC", "detail": "d",
+        {"indicator": "L1.16", "verdict": "OUT_OF_SPEC", "detail": "d",
          "action": "a"},
         dict(NO_ANALYZER)])
     assert out.splitlines()[0].startswith("honest-code: 2 of 3")
@@ -183,7 +187,7 @@ def test_coverage_counts_checks_that_ran_not_findings_that_fired():
 
 def test_full_coverage_says_three_of_three():
     out = edit_check.render("a/big.py", [
-        {"indicator": "L1.17", "verdict": "OUT_OF_SPEC", "detail": "d",
+        {"indicator": "L1.16", "verdict": "OUT_OF_SPEC", "detail": "d",
          "action": "a"}])
     assert out.splitlines()[0].startswith("honest-code: 3 of 3")
 
@@ -207,7 +211,7 @@ def test_no_report_ever_claims_the_file_passed():
     this test could not tell from a claim the hook was making."""
     shapes = [
         [dict(NO_ANALYZER)],
-        [{"indicator": "L1.17", "verdict": "OUT_OF_SPEC", "detail": "d",
+        [{"indicator": "L1.16", "verdict": "OUT_OF_SPEC", "detail": "d",
           "action": "a"}],
         [{"indicator": "L1.16", "verdict": "OUT_OF_SPEC", "detail": "d",
           "action": "a"}, dict(NO_ANALYZER)],
@@ -222,7 +226,7 @@ def test_every_report_opens_on_coverage_not_on_a_verdict():
     """The reader learns what was examined before what was found, so the list
     can never be taken for a complete one."""
     for findings in ([dict(NO_ANALYZER)],
-                     [{"indicator": "L1.17", "verdict": "OUT_OF_SPEC",
+                     [{"indicator": "L1.16", "verdict": "OUT_OF_SPEC",
                        "detail": "d", "action": "a"}]):
         assert edit_check.render("b.py", findings).startswith("honest-code: ")
         assert "checks ran on" in edit_check.render("b.py", findings)
@@ -235,13 +239,13 @@ def test_the_hook_runs_as_a_subprocess_and_is_silent_on_a_clean_file(tmp_path):
 
 def test_the_hook_runs_as_a_subprocess_and_exits_2_on_a_finding(tmp_path, monkeypatch):
     monkeypatch.setenv("HONEST_PENDING_DIR", str(tmp_path / "pending"))
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    f = tmp_path / "big.py"; f.write_text(MESSY)
     env = {**os.environ, "HONEST_PENDING_DIR": str(tmp_path / "pending")}
     hook = [sys.executable, str(ROOT / "hooks" / "edit_check.py")]
     subprocess.run(hook, input=payload(f), capture_output=True, text=True, env=env)
     p = subprocess.run(hook, input=json.dumps({"session_id": "s1"}),
                        capture_output=True, text=True, env=env)
-    assert p.returncode == 2 and "L1.17" in p.stderr and p.stdout == ""
+    assert p.returncode == 2 and "L1.16" in p.stderr and p.stdout == ""
 
 
 def test_the_hook_is_fast_enough_to_sit_in_an_edit_loop(tmp_path):
@@ -428,10 +432,10 @@ def test_a_firing_records_which_indicators_hit(tmp_path, monkeypatch):
     log = tmp_path / "t.jsonl"
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
     no_delegates(monkeypatch)
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    f = tmp_path / "big.py"; f.write_text(MESSY)
     run_hook(payload(f), monkeypatch)
     row = json.loads(log.read_text().splitlines()[-1])
-    assert row["verdict"] == "fired" and "L1.17" in row["why"]
+    assert row["verdict"] == "fired" and "L1.16" in row["why"]
 
 
 def test_an_unchecked_extension_is_recorded_rather_than_silent(tmp_path, monkeypatch):
@@ -570,7 +574,7 @@ def test_a_write_says_nothing_until_the_turn_ends(tmp_path, monkeypatch):
     times produced three reports and the model read one describing content two
     edits out of date."""
     no_delegates(monkeypatch)
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    f = tmp_path / "big.py"; f.write_text(MESSY)
     assert _fire(payload(f), monkeypatch) == (0, "")
 
 
@@ -579,7 +583,7 @@ def test_a_violation_introduced_then_fixed_in_one_turn_is_never_reported(
     """The whole reason for deferring. The turn's last word on the file is the
     only one worth an opinion."""
     no_delegates(monkeypatch)
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    f = tmp_path / "big.py"; f.write_text(MESSY)
     _fire(payload(f), monkeypatch)
     f.write_text(CLEAN)
     _fire(payload(f), monkeypatch)
@@ -588,7 +592,7 @@ def test_a_violation_introduced_then_fixed_in_one_turn_is_never_reported(
 
 def test_one_file_edited_twice_is_reported_once(tmp_path, monkeypatch):
     no_delegates(monkeypatch)
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    f = tmp_path / "big.py"; f.write_text(MESSY)
     _fire(payload(f), monkeypatch)
     _fire(payload(f), monkeypatch)
     code, err = _fire(json.dumps({"session_id": "s1"}), monkeypatch)
@@ -598,7 +602,7 @@ def test_one_file_edited_twice_is_reported_once(tmp_path, monkeypatch):
 def test_two_files_each_get_their_own_report(tmp_path, monkeypatch):
     no_delegates(monkeypatch)
     for name in ("a.py", "b.py"):
-        f = tmp_path / name; f.write_text("x = 1\n" * 1001)
+        f = tmp_path / name; f.write_text(MESSY)
         _fire(payload(f), monkeypatch)
     code, err = _fire(json.dumps({"session_id": "s1"}), monkeypatch)
     assert code == 2 and err.count("honest-code:") == 2
@@ -608,7 +612,7 @@ def test_the_same_finding_does_not_block_a_second_turn(tmp_path, monkeypatch):
     """A Stop hook that repeats itself is a Stop hook that never lets the turn
     end. Said once, then the choice not to act on it is the writer's."""
     no_delegates(monkeypatch)
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    f = tmp_path / "big.py"; f.write_text(MESSY)
     _fire(payload(f), monkeypatch)
     assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
     _fire(payload(f), monkeypatch)
@@ -632,7 +636,7 @@ def test_a_changed_file_is_reported_again(tmp_path, monkeypatch):
 def test_a_file_deleted_before_the_turn_ends_is_not_a_finding(
         tmp_path, monkeypatch):
     no_delegates(monkeypatch)
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    f = tmp_path / "big.py"; f.write_text(MESSY)
     _fire(payload(f), monkeypatch)
     f.unlink()
     assert _fire(json.dumps({"session_id": "s1"}), monkeypatch) == (0, "")
@@ -641,7 +645,7 @@ def test_a_file_deleted_before_the_turn_ends_is_not_a_finding(
 def test_two_sessions_do_not_read_each_others_pending_writes(
         tmp_path, monkeypatch):
     no_delegates(monkeypatch)
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    f = tmp_path / "big.py"; f.write_text(MESSY)
     _fire(json.dumps({"session_id": "one",
                       "tool_input": {"file_path": str(f)}}), monkeypatch)
     assert _fire(json.dumps({"session_id": "two"}), monkeypatch) == (0, "")
@@ -663,7 +667,7 @@ def test_a_stale_session_is_told_so_alongside_the_finding(tmp_path, monkeypatch)
     the same noise by another name."""
     monkeypatch.setattr(edit_check, "stale_note",
                         lambda: "this session runs 0.13.1, 0.22.0 is installed.")
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    f = tmp_path / "big.py"; f.write_text(MESSY)
     no_delegates(monkeypatch)
     report = edit_check.render(str(f), edit_check.findings_for(str(f), f.read_text())[0])
     assert "0.13.1" in report.splitlines()[1]
@@ -715,7 +719,7 @@ def test_a_session_whose_stop_never_runs_gets_told_rather_than_going_silent(
     import os, time
     no_delegates(monkeypatch)
     old_file = tmp_path / "stranded.py"
-    old_file.write_text("x = 1\n" * 1001)
+    old_file.write_text(MESSY)
     old = time.time() - 700
     os.utime(old_file, (old, old))
     edit_check.write_state("edit", "s1", {
@@ -724,13 +728,13 @@ def test_a_session_whose_stop_never_runs_gets_told_rather_than_going_silent(
     code, err = _fire(payload(new), monkeypatch)
     assert code == 2
     assert "the Stop hook is not running in this session" in err
-    assert "stranded.py" in err and "L1.17" in err
+    assert "stranded.py" in err and "L1.16" in err
 
 
 def test_the_drained_write_is_not_reported_a_second_time(tmp_path, monkeypatch):
     import os, time
     no_delegates(monkeypatch)
-    f = tmp_path / "stranded.py"; f.write_text("x = 1\n" * 1001)
+    f = tmp_path / "stranded.py"; f.write_text(MESSY)
     old = time.time() - 700
     os.utime(f, (old, old))
     edit_check.write_state("edit", "s1", {
@@ -974,7 +978,7 @@ def test_a_finding_with_no_clause_leaves_the_field_out(tmp_path, monkeypatch):
     log = tmp_path / "t.jsonl"
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
     no_delegates(monkeypatch)
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    f = tmp_path / "big.py"; f.write_text(MESSY)
     run_hook(payload(f), monkeypatch)
     fired = [json.loads(l) for l in log.read_text().splitlines()
              if json.loads(l).get("verdict") == "fired"]
@@ -1053,7 +1057,7 @@ def test_a_suppression_outranks_a_finding_in_the_unit_state(
     monkeypatch.setattr(edit_check, "honest_code_finding",
                         lambda p, d=None: {"indicator": "L1.21", "verdict": "SUPPRESSED",
                                    "detail": "1 silenced", "action": "a"})
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)   # also trips L1.17
+    f = tmp_path / "big.py"; f.write_text(MESSY)   # also trips L1.17
     run_hook(payload(f), monkeypatch)
     row = next(json.loads(l) for l in log.read_text().splitlines()
                if json.loads(l).get("event") == "Stop:edit"
@@ -1066,16 +1070,16 @@ def test_a_suppression_outranks_a_finding_in_the_unit_state(
 def test_a_standing_finding_keeps_being_reported(tmp_path, monkeypatch):
     """An agent is not worn down the way a person is, and a finding that stops
     being said stops being visible. Adam overruled the suppression that used to
-    live here: the file is still 1526 lines and the report should keep saying
-    so until it is not."""
+    live here: the file still trips the check and the report should keep saying
+    so until it does not."""
     no_delegates(monkeypatch)
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    f = tmp_path / "messy.py"; f.write_text(MESSY)
     _fire(payload(f), monkeypatch)
     assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
-    f.write_text("x = 1\n" * 1100)          # edited again, still too long
+    f.write_text(MESSY + "w = 4  \\n")   # edited again, still messy
     _fire(payload(f), monkeypatch)
     code, err = _fire(json.dumps({"session_id": "s1"}), monkeypatch)
-    assert code == 2 and "L1.17" in err
+    assert code == 2 and "L1.16" in err
 
 
 def test_a_repeat_says_how_long_it_has_been_standing(tmp_path, monkeypatch):
@@ -1083,11 +1087,11 @@ def test_a_repeat_says_how_long_it_has_been_standing(tmp_path, monkeypatch):
     report from what has stood all session. A file that fixed one of its two
     findings got a report that looked identical to the two before it."""
     no_delegates(monkeypatch)
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    f = tmp_path / "big.py"; f.write_text(MESSY)
     _fire(payload(f), monkeypatch)
     _, first = _fire(json.dumps({"session_id": "s1"}), monkeypatch)
     assert "still standing" not in first
-    f.write_text("x = 1\n" * 1100)
+    f.write_text(MESSY + "w = 4  \\n")   # edited again, still messy
     _fire(payload(f), monkeypatch)
     _, second = _fire(json.dumps({"session_id": "s1"}), monkeypatch)
     assert "still standing, told 2 times" in second
@@ -1097,10 +1101,10 @@ def test_another_file_over_the_limit_is_still_reported(tmp_path, monkeypatch):
     """Said once per file, not once per session. A second long file is news
     about a different file."""
     no_delegates(monkeypatch)
-    a = tmp_path / "a.py"; a.write_text("x = 1\n" * 1001)
+    a = tmp_path / "a.py"; a.write_text(MESSY)
     _fire(payload(a), monkeypatch)
     assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
-    b = tmp_path / "b.py"; b.write_text("y = 2\n" * 1001)
+    b = tmp_path / "b.py"; b.write_text(MESSY.replace("x", "q"))
     _fire(payload(b), monkeypatch)
     assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
 
@@ -1146,7 +1150,7 @@ def test_a_finding_is_raised_again_after_the_wait_even_with_no_new_write(
     A finding only re-checked when the file is written can be escaped by never
     writing to it again."""
     no_delegates(monkeypatch)
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    f = tmp_path / "big.py"; f.write_text(MESSY)
     _fire(payload(f), monkeypatch)
     assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
     # The agent moves on. Nothing touches big.py again.
@@ -1164,7 +1168,7 @@ def test_a_finding_fixed_while_working_elsewhere_is_never_raised(
     """Verified, not remembered. The file is re-assessed before anything is
     said, so a fix made in passing closes the entry in silence."""
     no_delegates(monkeypatch)
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    f = tmp_path / "big.py"; f.write_text(MESSY)
     _fire(payload(f), monkeypatch)
     assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
     f.write_text(CLEAN)                        # fixed, without the hook seeing it
@@ -1182,7 +1186,7 @@ def test_the_wait_has_to_elapse_before_it_is_raised_again(
     """Nagging on a timer, not on every turn. A finding raised again seconds
     later is repetition without information."""
     no_delegates(monkeypatch)
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    f = tmp_path / "big.py"; f.write_text(MESSY)
     _fire(payload(f), monkeypatch)
     assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
     other = tmp_path / "ok.py"; other.write_text(CLEAN)
@@ -1192,7 +1196,7 @@ def test_the_wait_has_to_elapse_before_it_is_raised_again(
 
 def test_a_file_that_went_away_closes_its_entry(tmp_path, monkeypatch):
     no_delegates(monkeypatch)
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    f = tmp_path / "big.py"; f.write_text(MESSY)
     _fire(payload(f), monkeypatch)
     _fire(json.dumps({"session_id": "s1"}), monkeypatch)
     f.unlink()
@@ -1210,13 +1214,13 @@ def test_a_standing_file_written_this_turn_is_not_raised_twice(
     """The turn already assessed it, so raising it again from the standing
     book would put the same finding in the same report twice."""
     no_delegates(monkeypatch)
-    f = tmp_path / "big.py"; f.write_text("x = 1\n" * 1001)
+    f = tmp_path / "big.py"; f.write_text(MESSY)
     _fire(payload(f), monkeypatch)
     assert _fire(json.dumps({"session_id": "s1"}), monkeypatch)[0] == 2
     state = edit_check.read_state("edit", "s1")
     state["standing"] = {str(f): 0.0}          # due, and written again below
     edit_check.write_state("edit", "s1", state)
-    f.write_text("x = 1\n" * 1100)
+    f.write_text(MESSY + "w = 4  \\n")   # edited again, still messy
     _fire(payload(f), monkeypatch)
     code, err = _fire(json.dumps({"session_id": "s1"}), monkeypatch)
     assert code == 2 and err.count("honest-code:") == 1

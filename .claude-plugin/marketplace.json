@@ -6,13 +6,13 @@
   },
   "metadata": {
     "description": "Four skills that make an AI agent report what it cannot do, plus the checkers that enforce them. sitrep puts the finding in the first sentence, bad news above good news, with a named gap for anything unverified. decision-brief writes a request for a decision in five sections and prices the cost of doing nothing. root-cause forbids a causal claim without evidence beside it and recurses to the structural cause. honest-code applies the same discipline to the code: no hidden state, no swallowed error, no implicit default. Ships prose and readability checkers for Markdown, commit messages and decision briefs, pre-commit hooks, and a PostToolUse hook that runs on every write. Silent on a clean file, because a check that speaks every time is noise and noise gets uninstalled. An MCP server exposes the same three checkers to Cursor, Codex and any other MCP client, so the checks are not tied to one editor.",
-    "version": "0.39.0"
+    "version": "0.40.0"
   },
   "plugins": [
     {
       "name": "honest-skills",
       "description": "Reduce the reader's cognitive load. Situation reports that put the finding first, decision briefs that price the cost of doing nothing, root cause analysis that refuses a claim without evidence, and prose and readability checks for Markdown and commit messages, enforced by hooks rather than offered as advice.",
-      "version": "0.39.0",
+      "version": "0.40.0",
       "source": "./",
       "author": {
         "name": "Adam Zachary Wasserman",
