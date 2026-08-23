@@ -1309,3 +1309,58 @@ def test_the_conformity_carries_how_many_clauses_could_be_read(
     row = next(json.loads(l) for l in log.read_text().splitlines()
                if json.loads(l).get("event") == "Stop:edit" and "band" in json.loads(l))
     assert row["decided"] == 3 and row["conformity"] == 92.9
+
+
+# --- content inside a readable file that no clause examined -------------------
+
+def _with_unexamined(monkeypatch, unexamined):
+    monkeypatch.setattr(edit_check.shutil, "which", lambda n: "/bin/true")
+    monkeypatch.setattr(edit_check.subprocess, "run",
+                        lambda *a, **k: type("R", (), {"stdout": json.dumps(
+                            [{"path": p, "clauses": [], "decided_clauses": 14,
+                              "conformity": 100.0, "band": "Healthy",
+                              "unexamined": unexamined}
+                             for p in a[0] if str(p).endswith(".py")])})())
+
+
+def test_a_file_carrying_unread_content_is_not_a_conforming_unit(
+        tmp_path, monkeypatch):
+    """A .py file whose content is JavaScript in a string scored 100 per cent
+    over 14 decided clauses with nothing marked unreadable. The share was right
+    about the Python and silent about the rest, and decided_clauses does not
+    help: it reads 14, which looks normal."""
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    _with_unexamined(monkeypatch, [{"language": "javascript", "line": 1, "lines": 14}])
+    f = tmp_path / "m.py"; f.write_text(CLEAN)
+    run_hook(payload(f), monkeypatch)
+    row = next(json.loads(l) for l in log.read_text().splitlines()
+               if json.loads(l).get("event") == "Stop:edit" and "unit" in json.loads(l))
+    assert row["unit"] == "not_measured"
+    assert row["conformity"] == 100.0        # the score itself stays true
+    assert row["unexamined"][0]["language"] == "javascript"
+
+
+def test_the_writer_is_told_what_was_never_examined(tmp_path, monkeypatch):
+    _with_unexamined(monkeypatch, [{"language": "javascript", "line": 3, "lines": 8}])
+    f = tmp_path / "m.py"; f.write_text(CLEAN)
+    code, err = run_hook(payload(f), monkeypatch)
+    assert code == 2
+    assert "8 line(s) in this file parse as javascript" in err
+    assert "first at line 3" in err
+
+
+def test_it_is_said_once_per_file(tmp_path, monkeypatch):
+    """Said on every edit it would be the nagging that trains skimming, and
+    unlike a violation there is nothing the writer can do to clear it."""
+    _with_unexamined(monkeypatch, [{"language": "javascript", "line": 1, "lines": 8}])
+    f = tmp_path / "m.py"; f.write_text(CLEAN)
+    assert run_hook(payload(f), monkeypatch)[0] == 2
+    f.write_text(CLEAN + "# more\n")
+    assert run_hook(payload(f), monkeypatch) == (0, "")
+
+
+def test_a_file_with_nothing_unexamined_is_unaffected(tmp_path, monkeypatch):
+    _with_unexamined(monkeypatch, [])
+    f = tmp_path / "m.py"; f.write_text(CLEAN)
+    assert run_hook(payload(f), monkeypatch) == (0, "")

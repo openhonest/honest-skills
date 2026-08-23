@@ -405,9 +405,15 @@ def findings_for(path: str, text: str,
     # decided_clauses travels with the conformity, always. 92.9 per cent over
     # nineteen readable clauses and 92.9 per cent over three are different
     # facts, and the share alone cannot tell them apart.
+    # `unexamined` names content inside a readable file that no clause looked
+    # at: JavaScript held in a Python string, for instance. The file can score
+    # 100 per cent and be right about it, because every clause that read it
+    # held. The share alone cannot say that most of the file was never read,
+    # and decided_clauses does not help: it reads 14, which looks normal.
     grade = {} if data is None else {"conformity": data.get("conformity"),
                                      "band": data.get("band"),
-                                     "decided": data.get("decided_clauses")}
+                                     "decided": data.get("decided_clauses"),
+                                     "unexamined": data.get("unexamined") or []}
     return ([f for f in (line_count_finding(text), whitespace_finding(text), hc)
              if f is not None], grade)
 
@@ -530,7 +536,10 @@ def assess(path: str, session: str = "",
         unit = "suppressed"
     elif any(f["verdict"] == "OUT_OF_SPEC" for f in findings):
         unit = "nonconforming"
-    elif ran < CHECKS:
+    elif ran < CHECKS or grade.get("unexamined"):
+        # A file carrying content no clause examined is not a conforming unit.
+        # It is a partial measurement, and counting it as conforming would put
+        # the unread half in the numerator.
         unit = "not_measured"
     else:
         unit = "conformed"
@@ -556,7 +565,8 @@ def assess(path: str, session: str = "",
           file=path, unit=unit, checks_ran=ran, checks=CHECKS,
           clauses=clauses or None,
           conformity=grade.get("conformity"), band=grade.get("band"),
-          decided=grade.get("decided"))
+          decided=grade.get("decided"),
+          unexamined=grade.get("unexamined") or None)
     if not any(f["verdict"] != "NOT_RUN" for f in findings):
         # A coverage gap on THIS file is an observation about this file, unlike
         # a missing binary, which says nothing about it. A Python parser over a
@@ -568,6 +578,18 @@ def assess(path: str, session: str = "",
         # Said once per language per session: never is a false clean bill on
         # every JavaScript file, and every write is noise to someone writing
         # JavaScript all day.
+        unread = grade.get("unexamined") or []
+        if unread and said_before(session, f"unexamined:{path}"):
+            first = unread[0]
+            return (render(path, [{
+                "indicator": "L1.21", "verdict": "NOT_RUN",
+                "detail": f"{sum(u.get('lines', 0) for u in unread)} line(s) in "
+                          f"this file parse as {first.get('language')} and no "
+                          f"clause examined them, first at line "
+                          f"{first.get('line')}",
+                "action": "the score above covers the rest of the file, not "
+                          "this"}]),
+                    hashlib.sha256(text.encode()).hexdigest())
         gap = next((f for f in findings if f["verdict"] == "NOT_RUN"
                     and "could not read this file" in f["detail"]), None)
         if gap and announce_once(session, Path(path).suffix.lower()):
