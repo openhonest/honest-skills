@@ -61,6 +61,17 @@ HANDLERS[channel](data)
 
 Only flag chains that dispatch on a value to select behaviour. Bounds checks, null guards and boolean logic are ordinary conditionals and are fine.
 
+**Moving a guard into a comprehension moves it after the expression.** A comprehension evaluates its clauses in source order, so the value is built before the filter runs and the guard no longer guards anything:
+
+```python
+# BROKEN: the join runs before the filter, so None reaches it
+", ".join(f'"{c}"' for c in key) for key in [key] if key and len(key) > 1
+```
+
+One session wrote that three times in three files and it took out 379 of 584 tests. Keep the guard where it runs first, or leave it an `if`.
+
+**Read the table by subscript, never with `.get`.** `HANDLERS.get(channel, do_nothing)` puts back the implicit default rule 14 bans, and rule 18 says why. The table and its reads are one decision.
+
 The table is also an option rather than a prediction: a case discovered in month six arrives as a row instead of a rewrite. Build one when you can name the axis of variation and it has a finite set of kinds. Where you cannot name the axis, write the concrete function and let the table appear when the second and third real cases show you what varies.
 
 ### 2. Typed dicts over classes
@@ -121,11 +132,17 @@ Pass `config` to the functions that need it. A module-level singleton or `self._
 
 ### 14. No implicit defaults
 
-`def f(x, timeout=30)` silently absorbs the caller's omission. The program can no longer distinguish a caller who chose thirty seconds from one who forgot, and the non-default region is invisible at every call site, so nothing exercises it.
+`details.get("columns", {})` and `column.get("nullable", True)` are where this actually appears. The signature form, `def f(x, timeout=30)`, is the one everybody recognises and the one almost nobody writes; the dictionary form is the same failure and looks like ordinary lookup. One session had 85 in `src` while believing it had none, because it was matching against signatures.
+
+One of those shipped as a bug. `column.get("nullable", True)` read a primary key's silence as nullable, so a differ emitted an alteration on an unchanged schema forever, on a column the database will not allow to be nullable.
+
+Either form silently absorbs the caller's omission. The program can no longer distinguish a caller who chose the value from one who forgot, and the non-default region is invisible at every call site, so nothing exercises it.
 
 A default is catch-and-swallow applied to inputs. It manufactures an untested input region by construction.
 
 Encode absence as an explicit member of a bounded type, a Maybe or a named `Nothing`, resolved in a visible boundary step and exercised by a test. The `=` is the swallow; the boundary resolve is the surfaced decision.
+
+**Give the resolved value its own name.** `file = resolved(file, None)` rebinds the parameter to a narrower type: the parameter can be absent, the resolved value cannot. It typechecks only while the resolver returns `Any`. One session wrote that 46 times, and every one surfaced the moment the resolver was given a real type.
 
 ### 15. Simple gherkin steps signal honest architecture
 

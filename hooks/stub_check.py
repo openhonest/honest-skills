@@ -244,6 +244,15 @@ def render(path: str, how: str, stubs: list[tuple[int, str]]) -> str:
     lines.append("      An empty body returns None to a caller that cannot tell "
                  "'not written' from 'nothing to do', so the first evidence "
                  "arrives somewhere else.")
+    # The remedy above is right for a Protocol method and wrong for the
+    # do-nothing half of a dispatch pair, which is a shape rule 1 produces
+    # every time a conditional becomes a table and only one branch does work.
+    # A session followed it verbatim there and every successful render would
+    # have raised.
+    lines.append("      If this is the do-nothing half of a dispatch pair, do "
+                 "NOT raise. Give both halves a return value the caller "
+                 "consumes, so the pair produces an answer rather than a side "
+                 "effect.")
     if any("asserts nothing" in what for _, what in stubs):
         lines.append("      A Then step that checks nothing does not merely "
                      "fail to check. It publishes a pass, and the suite counts "

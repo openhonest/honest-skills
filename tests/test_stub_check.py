@@ -492,3 +492,16 @@ def test_a_stranded_stub_that_was_filled_in_is_dropped_quietly(
     other.write_text("def ok(c):\n    return c\n")
     assert _fire(payload(other), monkeypatch) == (0, "")
     assert sc.stranded("stub", "s") == []
+
+
+def test_the_remedy_names_the_case_where_raising_is_wrong(tmp_path, monkeypatch):
+    """`raise NotImplementedError` is right for a Protocol method and wrong for
+    the do-nothing half of a dispatch pair, which is the shape rule 1 produces
+    every time a conditional becomes a table and only one branch does work. A
+    session followed it verbatim there and every successful render would have
+    raised."""
+    f = tmp_path / "gw.py"; f.write_text("def do_nothing(c, a):\n    pass\n")
+    code, err = run_hook(payload(f), monkeypatch)
+    assert code == 2
+    assert "do-nothing half of a dispatch pair" in err
+    assert "do NOT raise" in err
