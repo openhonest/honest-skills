@@ -72,6 +72,19 @@ One session wrote that three times in three files and it took out 379 of 584 tes
 
 **Read the table by subscript, never with `.get`.** `HANDLERS.get(channel, do_nothing)` puts back the implicit default rule 14 bans, and rule 18 says why. The table and its reads are one decision.
 
+**When the branches differ only in a value, the table holds the value, not a function per branch.** The example above is a table of functions because sending email and sending SMS are genuinely different work. Sixteen SQL generators that differ only in a keyword are not:
+
+```python
+# STILL THE CHAIN, WEARING A TABLE
+RENDER = {"drop": drop_sql, "add": add_sql, "rename": rename_sql, ...}
+
+# THE TABLE
+TEMPLATE = {"drop": "DROP COLUMN {col}", "add": "ADD COLUMN {col} {type}"}
+def render(kind, **parts): return TEMPLATE[kind].format(**parts)
+```
+
+An agent asked to make exactly that change read the rule, restated it correctly, and then wrote sixty functions and thirty-five uses of `Any`. It had followed the words. The half that decides which shape you get was in nobody's head: **name what varies between the branches. If it is a value, the table holds values. If it is behaviour, the table holds functions.**
+
 The table is also an option rather than a prediction: a case discovered in month six arrives as a row instead of a rewrite. Build one when you can name the axis of variation and it has a finite set of kinds. Where you cannot name the axis, write the concrete function and let the table appear when the second and third real cases show you what varies.
 
 ### 2. Typed dicts over classes
