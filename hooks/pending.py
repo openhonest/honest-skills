@@ -66,9 +66,10 @@ def entries(state: dict) -> list[dict]:
     out = []
     for e in state["pending"]:
         if isinstance(e, str):
-            out.append({"path": e, "at": 0.0})
+            out.append({"path": e, "at": 0.0, "attributed": False})
         elif isinstance(e, dict) and isinstance(e.get("path"), str):
-            out.append({"path": e["path"], "at": float(e.get("at") or 0.0)})
+            out.append({"path": e["path"], "at": float(e.get("at") or 0.0),
+                        "attributed": bool(e.get("attributed"))})
     return out
 
 
@@ -150,11 +151,16 @@ def write_state(kind: str, session: str, state: dict) -> None:
         pass
 
 
-def defer(kind: str, path: str, session: str) -> None:
-    """Record the write and say nothing until the file stops moving."""
+def defer(kind: str, path: str, session: str, attributed: bool = False) -> None:
+    """Record the write and say nothing until the file stops moving.
+
+    `attributed` marks a file this session is only believed to have written,
+    because a timestamp moved under its working directory rather than because
+    an edit was observed. The belief can be wrong and the report should say so.
+    """
     state = read_state(kind, session)
     held = entries(state)
     if not any(e["path"] == path for e in held):
-        held.append({"path": path, "at": time.time()})
+        held.append({"path": path, "at": time.time(), "attributed": attributed})
     state["pending"] = held
     write_state(kind, session, state)

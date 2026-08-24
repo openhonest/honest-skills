@@ -93,10 +93,14 @@ def test_every_row_carries_the_time_it_was_written(tmp_path, monkeypatch):
 def test_every_row_says_which_session_and_version_wrote_it(tmp_path, monkeypatch):
     """Rows from every session share one file. Without these two fields there
     was no way to tell whether a session that had not restarted was running the
-    new hooks, and the answer had to come from an experiment."""
+    new hooks, and the answer had to come from an experiment.
+
+    The session comes from the hook's own input. It used to be read from
+    CLAUDE_SESSION_ID, which is never set, so every row said "" while the state
+    file read the same fact from the input and worked."""
     log = tmp_path / "t.jsonl"
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
-    monkeypatch.setenv("CLAUDE_SESSION_ID", "abcdef1234567890")
+    trace_hook.note_session(json.dumps({"session_id": "abcdef1234567890"}))
     monkeypatch.setattr(
         trace_hook, "__file__",
         "/c/honest-skills/honest-skills/0.23.0/hooks/trace_hook.py")
@@ -110,6 +114,27 @@ def test_a_row_written_outside_a_session_still_records(tmp_path, monkeypatch):
     refusal to write."""
     log = tmp_path / "t.jsonl"
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
-    monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
+    trace_hook.note_session("{}")
     trace_hook.trace("E", "fired", "why")
     assert json.loads(log.read_text())["session"] == ""
+
+
+def test_a_run_with_no_session_in_its_input_records_none(tmp_path, monkeypatch):
+    """Run by hand there is no session, and an empty field is honest where a
+    guess would not be."""
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    trace_hook.note_session("not json at all")
+    trace_hook.trace("E", "fired", "why")
+    assert json.loads(log.read_text())["session"] == ""
+
+
+def test_the_session_is_not_read_from_the_environment(tmp_path, monkeypatch):
+    """CLAUDE_SESSION_ID is never set for a hook. Reading it there is what made
+    every row since the field was added say nothing."""
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "from-the-environment")
+    trace_hook.note_session(json.dumps({"session_id": "from-the-input"}))
+    trace_hook.trace("E", "fired", "why")
+    assert json.loads(log.read_text())["session"] == "from-the"

@@ -41,7 +41,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pending import (defer, read_state, session_key,  # noqa: E402
                      write_state)
-from trace_hook import trace  # noqa: E402
+from trace_hook import note_session, trace  # noqa: E402
 import edit_check  # noqa: E402
 
 # How far back to look. Long enough for a slow command, short enough that the
@@ -105,6 +105,7 @@ def recently_written(root: str, window: float) -> list[str]:
 
 def main() -> int:
     raw = sys.stdin.read()
+    note_session(raw)
     try:
         payload = json.loads(raw)
     except (ValueError, TypeError):
@@ -130,8 +131,14 @@ def main() -> int:
     # written by a script now gets the stub check too, which only ever saw
     # Write and Edit.
     for path in written:
-        defer("edit", path, session)
-        defer("stub", path, session)
+        # Marked as attributed rather than observed. This hook lists source
+        # files whose timestamp moved under the session's working directory; it
+        # cannot see which command wrote them. Another session editing under
+        # the same tree lands here, and on 2026-08-24 one did: a session was
+        # told about a file in someone else's working copy, annotated by
+        # someone else, that it had never touched.
+        defer("edit", path, session, attributed=True)
+        defer("stub", path, session, attributed=True)
     trace("PostToolUse:bash", "deferred", f"{len(written)} held until they settle",
           files=written)
     return 0                          # silence: the files may still be moving

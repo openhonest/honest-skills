@@ -72,7 +72,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pending import (defer, drop, entries, read_state,  # noqa: E402
                      session_key, stranded, write_state)
-from trace_hook import stale_note, trace  # noqa: E402
+from trace_hook import note_session, stale_note, trace  # noqa: E402
 
 # L1.17 at file scope. The published band is a percentage of files in a
 # repository, which is meaningless for one file. The question underneath it,
@@ -693,7 +693,10 @@ def settle(session: str) -> str:
     state = read_state(KIND, session)
     reported = state["reported"]
     reports, looked_at = [], []
-    queued = [e["path"] for e in entries(state)]
+    held = entries(state)
+    queued = [e["path"] for e in held]
+    # Which of these this session is only believed to have written.
+    guessed = {e["path"] for e in held if e.get("attributed")}
     said = analyzer_says_all([p for p in queued
                              if Path(p).suffix.lower() in SOURCE])
     for path in queued:
@@ -714,7 +717,14 @@ def settle(session: str) -> str:
                   file=path)
             continue
         reported[path] = digest
-        reports.append(report)
+        # A file found by timestamp under the working directory is not known to
+        # be this session's. Saying so is the difference between a finding and
+        # an accusation: one session was told about a file in another's working
+        # copy, annotated by someone else, that it had never touched.
+        reports.append(report + (
+            "\n      attributed to this session because the file changed while "
+            "a command ran here, not because an edit was seen. It may be "
+            "another session's." if path in guessed else ""))
     # said_of is re-read here rather than carried from the top. assess() can
     # add to it while this loop runs, and writing back the value captured
     # before the loop put the stale one on disk, so a language announced
@@ -746,6 +756,7 @@ def settle(session: str) -> str:
 def main() -> int:
     raw = sys.stdin.read()
     session = session_key(raw)
+    note_session(raw)
     path = hook_input(raw)
     if not path:
         # No file path means this is the Stop firing, where the writes have

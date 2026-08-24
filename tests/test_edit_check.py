@@ -1408,3 +1408,31 @@ def test_an_array_response_for_one_path_is_read_as_that_file(monkeypatch):
                         lambda *a, **k: type("R", (), {"stdout": json.dumps(
                             [{"clauses": [], "decided_clauses": 14}])})())
     assert hc("x.py") is None
+
+
+# --- believed, not observed --------------------------------------------------
+
+def test_a_file_found_by_timestamp_says_it_may_be_another_session_s(
+        tmp_path, monkeypatch):
+    """The Bash hook lists files whose timestamp moved under the working
+    directory; it cannot see which command wrote them. On 2026-08-24 a session
+    was told about a file in another session's working copy, annotated by
+    someone else, that it had never touched."""
+    no_delegates(monkeypatch)
+    f = tmp_path / "other.py"; f.write_text(MESSY)
+    edit_check.defer("edit", str(f), "s1", attributed=True)
+    code, err = _fire(json.dumps({"session_id": "s1"}), monkeypatch)
+    assert code == 2
+    assert "may be another session's" in err
+    assert "not because an edit was seen" in err
+
+
+def test_a_file_this_session_edited_carries_no_such_caveat(
+        tmp_path, monkeypatch):
+    """An observed edit is known, and hedging a known thing is its own kind of
+    dishonesty."""
+    no_delegates(monkeypatch)
+    f = tmp_path / "mine.py"; f.write_text(MESSY)
+    _fire(payload(f), monkeypatch)
+    code, err = _fire(json.dumps({"session_id": "s1"}), monkeypatch)
+    assert code == 2 and "another session" not in err

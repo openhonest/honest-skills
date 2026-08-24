@@ -81,7 +81,7 @@ def test_a_write_from_an_older_version_is_read_as_held_since_forever():
     pending.state_file("edit", "s").write_text(
         '{"pending": ["/a.py"], "reported": {}}')
     assert pending.entries(pending.read_state("edit", "s")) == [
-        {"path": "/a.py", "at": 0.0}]
+        {"path": "/a.py", "at": 0.0, "attributed": False}]
 
 
 def test_an_entry_of_the_wrong_shape_is_dropped_rather_than_raised_on():

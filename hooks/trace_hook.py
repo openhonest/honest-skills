@@ -51,6 +51,25 @@ def stale_note() -> str:
     return ""
 
 
+SESSION = ""            # set once per run by the hook, from its own input
+
+
+def note_session(raw: str) -> None:
+    """Record which session this hook run belongs to.
+
+    Read from the hook's input, which carries it, rather than from
+    CLAUDE_SESSION_ID, which is never set. The state file keyed itself off the
+    input all along and worked; only the trace read the environment, so every
+    row since the field was added has said "". One fact, two sources, and the
+    wrong one was the one people read.
+    """
+    global SESSION
+    try:
+        SESSION = str((json.loads(raw) or {}).get("session_id") or "")[:8]
+    except (ValueError, TypeError, AttributeError):
+        SESSION = ""
+
+
 def trace(event: str, verdict: str, why: str, **facts: object) -> None:
     """Record that the hook ran, when someone asks for the record.
 
@@ -87,7 +106,7 @@ def trace(event: str, verdict: str, why: str, **facts: object) -> None:
             # answered from it. An instrument that cannot say when or on what
             # records that something happened, which is not a measurement.
             row = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                   "session": os.environ.get("CLAUDE_SESSION_ID", "")[:8],
+                   "session": SESSION,
                    "version": running_version(),
                    "event": event, "verdict": verdict, "why": why}
             # Named fields rather than more prose in `why`. Whether a firing

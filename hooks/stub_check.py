@@ -61,7 +61,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pending import (defer, drop, entries, read_state,  # noqa: E402
                      session_key, stranded, write_state)
-from trace_hook import trace  # noqa: E402
+from trace_hook import note_session, trace  # noqa: E402
 
 # A suggested wording, not a test. What this requires is that the function
 # RAISE; the words are a project's own choice, and one repository here settled
@@ -313,6 +313,7 @@ def settle(session: str) -> str:
 def main() -> int:
     raw = sys.stdin.read()
     session = session_key(raw)
+    note_session(raw)
     try:
         path = str((json.loads(raw).get("tool_input") or {}).get("file_path") or "")
     except (ValueError, TypeError, AttributeError):
