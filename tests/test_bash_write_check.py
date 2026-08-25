@@ -50,13 +50,13 @@ def test_it_finds_a_file_written_by_a_heredoc(tmp_path):
     """280 of one session's 376 Bash writes were Python heredocs, where the
     path lives inside the Python and no shell parsing can find it."""
     (tmp_path / "x.py").write_text(DIRTY)
-    assert bw.recently_written(str(tmp_path), 120) == [str(tmp_path / "x.py")]
+    assert bw.recently_written(str(tmp_path), 120)[0] == [str(tmp_path / "x.py")]
 
 
 def test_a_file_written_long_ago_is_not_this_command(tmp_path):
     f = tmp_path / "old.py"; f.write_text(CLEAN)
     os.utime(f, (time.time() - 600, time.time() - 600))
-    assert bw.recently_written(str(tmp_path), 120) == []
+    assert bw.recently_written(str(tmp_path), 120)[0] == []
 
 
 @pytest.mark.parametrize("d", [".git", "node_modules", ".venv", "__pycache__", "target"])
@@ -64,12 +64,12 @@ def test_generated_and_vendored_trees_are_skipped(tmp_path, d):
     """A checkout moves every file in .git and none of it is someone editing."""
     sub = tmp_path / d; sub.mkdir()
     (sub / "x.py").write_text(DIRTY)
-    assert bw.recently_written(str(tmp_path), 120) == []
+    assert bw.recently_written(str(tmp_path), 120)[0] == []
 
 
 def test_a_file_type_it_does_not_check_is_not_collected(tmp_path):
     (tmp_path / "notes.md").write_text("hello")
-    assert bw.recently_written(str(tmp_path), 120) == []
+    assert bw.recently_written(str(tmp_path), 120)[0] == []
 
 
 def test_a_build_reports_nothing(tmp_path, monkeypatch):
@@ -149,7 +149,7 @@ def test_an_unwalkable_entry_does_not_stop_the_scan(tmp_path, monkeypatch):
     def boom(p):
         raise OSError("no")
     monkeypatch.setattr(bw.os.path, "getmtime", boom)
-    assert bw.recently_written(str(tmp_path), 120) == []
+    assert bw.recently_written(str(tmp_path), 120)[0] == []
 
 
 def test_it_never_claims_the_command_caused_the_change():
@@ -231,3 +231,50 @@ def test_the_second_look_measures_from_the_first(tmp_path, monkeypatch):
     bw.since_last_look("s")
     got = bw.since_last_look("s")
     assert 1.0 <= got < bw.WINDOW
+
+
+# --- a walk it cannot finish is not a shorter answer --------------------------
+
+def test_a_tree_too_large_to_sweep_reports_nothing(tmp_path, monkeypatch):
+    """A session whose working directory was the home tree made this hook walk
+    everything on every Bash command: 26 seconds measured, against 2
+    milliseconds from inside a repository."""
+    monkeypatch.setattr(bw, "DIR_BUDGET", 2)
+    for i in range(6):
+        d = tmp_path / f"d{i}"; d.mkdir()
+        (d / "x.py").write_text(DIRTY)
+    found, finished = bw.recently_written(str(tmp_path), 120)
+    assert not finished
+
+
+def test_an_unfinished_sweep_says_nothing_rather_than_something(
+        tmp_path, monkeypatch):
+    """Returning what it found would report a partial sweep as a complete one,
+    which is the defect this whole tool exists to report."""
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    monkeypatch.setattr(bw, "DIR_BUDGET", 1)
+    for i in range(4):
+        d = tmp_path / f"d{i}"; d.mkdir()
+        (d / "x.py").write_text(DIRTY)
+    assert run_hook(payload(tmp_path), monkeypatch) == (0, "")
+    assert pending.entries(pending.read_state("edit", "s")) == []
+    assert any("too large to sweep" in json.loads(l)["why"]
+               for l in log.read_text().splitlines())
+
+
+def test_a_walk_that_finishes_still_reports_normally(tmp_path, monkeypatch):
+    (tmp_path / "x.py").write_text(DIRTY)
+    found, finished = bw.recently_written(str(tmp_path), 120)
+    assert finished and found == [str(tmp_path / "x.py")]
+
+
+def test_the_trees_that_are_never_source_are_skipped(tmp_path):
+    """Between them these were the reason a session rooted at the home
+    directory took 26 seconds per Bash command. Library alone holds 134,860 of
+    that tree's 166,779 directories; the whole of ~/dev is 12,863."""
+    for name in ("Library", "go", "Applications", "Downloads"):
+        d = tmp_path / name; d.mkdir()
+        (d / "x.py").write_text(DIRTY)
+    found, finished = bw.recently_written(str(tmp_path), 120)
+    assert finished and found == []

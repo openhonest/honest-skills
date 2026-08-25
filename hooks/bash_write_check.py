@@ -58,7 +58,13 @@ TOO_MANY = 8
 # the identical block five times while working on something else. The key is
 # the file's content, so a fix is reported on and an unchanged file is not.
 SKIP = {".git", "node_modules", ".venv", "venv", "__pycache__", "target",
-        "dist", "build", ".mypy_cache", ".pytest_cache", ".ruff_cache"}
+        "dist", "build", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+        # Never where anyone edits source, and between them the reason a
+        # session rooted at the home directory took 26 seconds per command:
+        # Library alone holds 134,860 of that tree's 166,779 directories and
+        # the module cache another 12,313. The whole of ~/dev is 12,863.
+        "Library", "Applications", "Movies", "Music", "Pictures", "go",
+        "Downloads"}
 
 
 def since_last_look(session: str) -> float:
@@ -83,11 +89,33 @@ def since_last_look(session: str) -> float:
     return max(1.0, min(WINDOW, time.time() - float(last)))
 
 
-def recently_written(root: str, window: float) -> list[str]:
-    """Source files under `root` whose mtime moved inside the window."""
+# How many directories the walk may visit before it gives up. A session whose
+# working directory is the home tree made this hook walk everything on every
+# Bash command: 26 seconds measured, against 2 milliseconds from inside a
+# repository. A hook that costs 26 seconds a command is worse than no hook.
+#
+# The budget fails loudly. A walk cut short has not seen the files it did not
+# reach, and returning what it found would report a partial sweep as a complete
+# one, which is the defect this whole tool exists to report.
+# Set above the largest tree anyone here actually works in. ~/dev is 12,863
+# directories and finishes in 0.7 seconds; the budget exists for the tree
+# nobody anticipated, not to trim the ones we know about.
+DIR_BUDGET = 20000
+
+
+def recently_written(root: str, window: float) -> tuple[list[str], bool]:
+    """Source files under `root` whose mtime moved inside the window.
+
+    Returns the files and whether the walk finished. An unfinished walk is not
+    a shorter list of changed files, it is no answer at all.
+    """
     cutoff = time.time() - window
     found = []
+    visited = 0
     for dirpath, dirnames, filenames in os.walk(root):
+        visited += 1
+        if visited > DIR_BUDGET:
+            return found, False
         dirnames[:] = [d for d in dirnames if d not in SKIP and not d.startswith(".")]
         for name in filenames:
             if Path(name).suffix.lower() not in edit_check.SOURCE:
@@ -99,8 +127,8 @@ def recently_written(root: str, window: float) -> list[str]:
             except OSError:
                 continue
             if len(found) > TOO_MANY:
-                return found
-    return found
+                return found, True
+    return found, True
 
 
 def main() -> int:
@@ -115,7 +143,13 @@ def main() -> int:
     root = str(payload.get("cwd") or os.getcwd())
 
     session = session_key(raw)
-    written = recently_written(root, since_last_look(session))
+    written, finished = recently_written(root, since_last_look(session))
+    if not finished:
+        # Say nothing about files rather than something about some of them.
+        trace("PostToolUse:bash", "declined",
+              f"the tree under {os.path.basename(root) or root} is too large to "
+              f"sweep, so no file here was checked")
+        return 0
     if len(written) > TOO_MANY:
         trace("PostToolUse:bash", "declined",
               f"{len(written)} files moved, reads as a build not an edit")
