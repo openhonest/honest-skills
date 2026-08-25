@@ -367,8 +367,21 @@ def honest_code_finding(path: str, data: dict) -> dict | None:
     #
     # This replaces counting markers, which counted 62 that excused nothing on
     # one package and 10 of 11 on another.
-    silenced = [a for c in clauses
-                for a in (c.get("allowed") or []) + (c.get("declared") or [])]
+    # These two lists are separate in the analyzer's output on purpose and they
+    # mean opposite things. Merged, a file was told it was "not conforming
+    # code" for having said where its edges are.
+    #
+    # `allowed` is an author overriding a rule with a stated reason. That is a
+    # suppression, declared out loud, which is why the reason is required.
+    #
+    # `declared` is a boundary decorator. Clause 4 asks whether I/O sits at an
+    # edge and INFERS the edge from the call graph, because most projects say
+    # nothing. The decorator is the project answering the question. Where a
+    # declaration and an inference disagree, the declaration is the better
+    # evidence, so a function under one is answering the rule rather than
+    # escaping it.
+    silenced = [a for c in clauses for a in (c.get("allowed") or [])]
+    declared = [a for c in clauses for a in (c.get("declared") or [])]
     hits = [f for c in clauses for f in (c.get("findings") or [])]
     # A block of another language held in a string is checked now, not merely
     # noticed, so what comes back is findings rather than a label. They are
@@ -386,10 +399,25 @@ def honest_code_finding(path: str, data: dict) -> dict | None:
     # made the call unconditional, which is work nobody asked for on the
     # common path.
     mine = []
-    if silenced and not hits:
+    if (silenced or declared) and not hits:
         touched_now = changed_lines(path)
-        mine = [a for a in silenced
-                if touched_now is None or a.get("line") in touched_now]
+        def on_changed(xs):
+            return [a for a in xs
+                    if touched_now is None or a.get("line") in touched_now]
+        mine = on_changed(silenced)
+        rests_on = on_changed(declared)
+        if rests_on and not mine:
+            # Not a mark against the file. What it says is where the clean
+            # reading came from, so a reader can weigh the declaration rather
+            # than trust it silently.
+            first = rests_on[0]
+            return {"indicator": "L1.21", "verdict": "DECLARED",
+                    "detail": f"this file's clean reading rests on "
+                              f"{len(rests_on)} boundary declaration(s); "
+                              f"line {first.get('line')} states the edge that "
+                              f"answers the rule",
+                    "action": "no change needed; the declaration is the "
+                              "project saying where its edges are"}
     if mine:
         # Silenced on the lines this edit touched, with nothing left to report.
         # Said plainly, because a suppression is a decision someone should be
@@ -556,12 +584,17 @@ def announce_once(session: str, suffix: str) -> bool:
 
 
 def assess(path: str, session: str = "",
-           said: dict | None = None) -> tuple[str, str] | None:
-    """The report for one settled file, with the content it describes.
+           said: dict | None = None) -> tuple[str, str, bool] | None:
+    """The report, the content it describes, and whether a defect is standing.
 
     Returns None when the file is gone, unreadable, or has nothing to say.
     The content hash travels with the report so a finding the model chose not
     to act on is not put a second time.
+
+    The third element is False when everything reported is a boundary
+    declaration, which is a note rather than a defect and so never joins the
+    nag timer. It is computed here, from the findings, because the caller only
+    has rendered text and reading a verdict back out of prose is a guess.
     """
     try:
         text = Path(path).read_text(errors="replace")
@@ -621,8 +654,14 @@ def assess(path: str, session: str = "",
     # count against the writer like a real finding; left as "declined" it would
     # count as conforming code, which is the reading that makes silencing the
     # cheap way to a good score.
+    # A declaration is not a broken rule, so it does not read as "fired". It
+    # answers clause 4, and a file carrying only declarations is conforming
+    # code that said where its edges are.
     verdict = ("suppressed"
                if hits and all(f["verdict"] in ("NOT_RUN", "SUPPRESSED")
+                               for f in findings)
+               else "declared"
+               if hits and all(f["verdict"] in ("NOT_RUN", "DECLARED")
                                for f in findings)
                else "fired" if hits else "declined")
     trace("Stop:edit", verdict,
@@ -648,12 +687,15 @@ def assess(path: str, session: str = "",
                     and "could not read this file" in f["detail"]), None)
         if gap and announce_once(session, Path(path).suffix.lower()):
             return (render(path, [gap]),
-                    hashlib.sha256(text.encode()).hexdigest())
+                    hashlib.sha256(text.encode()).hexdigest(), False)
         # Nothing surfaced. A check that did not run is not an observation
         # about this file, and announcing it here would put the tool's own
         # limitation where a finding about the code belongs.
         return None
-    return render(path, findings), hashlib.sha256(text.encode()).hexdigest()
+    standing_now = any(f["verdict"] not in ("NOT_RUN", "DECLARED")
+                       for f in findings)
+    return (render(path, findings),
+            hashlib.sha256(text.encode()).hexdigest(), standing_now)
 
 
 def standing(session: str) -> list[str]:
@@ -706,8 +748,12 @@ def settle(session: str) -> str:
             reported.pop(path, None)
             note_standing(session, path, False)   # clean now, stop nagging
             continue
-        note_standing(session, path, True)
-        report, digest = got
+        report, digest, outstanding = got
+        # A declaration is a note, not a defect, so it is said once and never
+        # put on the nag timer. On the timer it told one session four times
+        # that a file was not conforming code, and the function it named had
+        # a single read for a body.
+        note_standing(session, path, outstanding)
         if reported.get(path) == digest:
             # Same file, same content, same finding, already put to this
             # session once. Repeating it cannot teach anything the first
@@ -740,7 +786,7 @@ def settle(session: str) -> str:
         if path in looked_at:
             continue
         got = assess(path, session)
-        if got is None:
+        if got is None or not got[2]:
             note_standing(session, path, False)
             continue
         reports.append(got[0])

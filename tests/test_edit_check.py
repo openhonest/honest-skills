@@ -1226,19 +1226,37 @@ def test_a_standing_file_written_this_turn_is_not_raised_twice(
     assert code == 2 and err.count("honest-code:") == 1
 
 
-def test_a_boundary_declaration_that_withheld_a_finding_counts(
+def test_a_boundary_declaration_reads_as_declared_not_suppressed(
         tmp_path, monkeypatch):
-    """Reported by the analyzer rather than inferred from a decorator. Counting
-    markers found 62 that excused nothing on one package, and 10 of 11 on
-    another."""
+    """A declaration answers clause 4 rather than escaping it. Clause 4 infers
+    the edge from the call graph because most projects say nothing; the
+    decorator is the project saying. Merged with `allowed`, this told a writer
+    their file was not conforming code for having said where its edges are, four
+    times in one day about a function whose whole body was one read."""
     _analyzer(monkeypatch, {"clauses": [
         {"code": "L1.21.4", "decided": True, "findings": [],
-         "declared": [{"line": 12, "reason": "declared boundary withheld it"}]}],
+         "declared": [{"line": 12, "reason": "reads the corpus"}]}],
         "decided_clauses": 1})
     monkeypatch.setattr(edit_check, "changed_lines", lambda p: None)
     f = tmp_path / "a.py"; f.write_text(CLEAN)
     got = hc(str(f))
-    assert got["verdict"] == "SUPPRESSED" and "line 12" in got["detail"]
+    assert got["verdict"] == "DECLARED" and "line 12" in got["detail"]
+    assert "no change needed" in got["action"]
+
+
+def test_an_override_still_reads_as_suppressed_beside_a_declaration(
+        tmp_path, monkeypatch):
+    """The two lists are separate, and one of them is still a suppression. An
+    author overriding a rule with a stated reason is exactly that, which is why
+    the reason is required. A declaration in the same file does not soften it."""
+    _analyzer(monkeypatch, {"clauses": [
+        {"code": "L1.21.4", "decided": True, "findings": [],
+         "allowed": [{"line": 3, "reason": "legacy caller"}],
+         "declared": [{"line": 12, "reason": "reads the corpus"}]}],
+        "decided_clauses": 1})
+    monkeypatch.setattr(edit_check, "changed_lines", lambda p: None)
+    f = tmp_path / "a.py"; f.write_text(CLEAN)
+    assert hc(str(f))["verdict"] == "SUPPRESSED"
 
 
 def test_an_analyzer_that_does_not_report_declarations_reads_as_none(
@@ -1436,3 +1454,25 @@ def test_a_file_this_session_edited_carries_no_such_caveat(
     _fire(payload(f), monkeypatch)
     code, err = _fire(json.dumps({"session_id": "s1"}), monkeypatch)
     assert code == 2 and "another session" not in err
+
+
+def test_a_declaration_is_said_once_and_never_joins_the_nag_timer(
+        tmp_path, monkeypatch):
+    """The timer exists for defects an agent walked away from. A declaration is
+    not one: it is the project answering clause 4. On the timer it told one
+    session four times that its file was not conforming code, and the function
+    it named had `return json.loads(CORPUS.read_text())["qualifying"]` for a
+    body."""
+    _analyzer(monkeypatch, {"clauses": [
+        {"code": "L1.21.4", "decided": True, "findings": [],
+         "declared": [{"line": 12, "reason": "reads the corpus"}]}],
+        "decided_clauses": 1})
+    monkeypatch.setattr(edit_check, "changed_lines", lambda p: None)
+    f = tmp_path / "edge.py"; f.write_text(CLEAN)
+    got = edit_check.assess(str(f), "s-decl")
+    assert got is not None and "DECLARED" in got[0]
+    assert got[2] is False, "a declaration must not open a standing entry"
+    edit_check.note_standing("s-decl", str(f), got[2])
+    later = edit_check.time.time() + edit_check.NAG_AFTER * 2
+    monkeypatch.setattr(edit_check.time, "time", lambda: later)
+    assert edit_check.standing("s-decl") == []
