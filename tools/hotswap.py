@@ -29,6 +29,7 @@ is ever needed again.
     uv run tools/hotswap.py --to 0.47.0     # roll back
 """
 import argparse
+import filecmp
 import os
 import shutil
 import sys
@@ -102,6 +103,37 @@ def swap(root: Path, target: str, versions: list[str]) -> list[str]:
     return done
 
 
+def changed_skills(root: Path, moved: list[str], target: str) -> list[str]:
+    """Skills whose text differs between what a session had and what it has now.
+
+    A hook is a subprocess and updates the moment its file changes. A skill is
+    not: its text enters a session's context when the skill is invoked and
+    stays there for the rest of the conversation. Swapping the file changes
+    what the next load reads and reaches nothing already loaded.
+
+    So the swap can deliver new enforcement to a running session and cannot
+    deliver new guidance. Naming the skills that changed is the difference
+    between a caller who knows to go and tell those sessions and one who
+    believes the update landed whole.
+    """
+    new = root / target / "skills"
+    if not new.is_dir():
+        return []
+    names = set()
+    for v in moved:
+        # A version that shipped no skills at all is not skipped. A session on
+        # it is running none of them, which is the largest gap there is, and
+        # skipping it reported nothing to tell anybody about.
+        old = root / f"{v}.real/skills"
+        for skill in new.iterdir():
+            before, after = old / skill.name / "SKILL.md", skill / "SKILL.md"
+            if not after.is_file():
+                continue
+            if not before.is_file() or not filecmp.cmp(before, after, shallow=False):
+                names.add(skill.name)
+    return sorted(names)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--to", metavar="VERSION",
@@ -170,6 +202,15 @@ def main() -> int:
     print(f"\n{len(changed)} path(s) now serve {target}. Running sessions pick "
           f"this up on their next hook firing, with no restart. Confirm it in "
           f"the trace: the version field should read {target}.")
+
+    moved = [line.split(" ->")[0] for line in changed if " -> " in line]
+    stale = changed_skills(a.root, moved, target)
+    if stale:
+        print(f"\nHooks only. These skills also changed and a running session "
+              f"will not see them:\n  {', '.join(stale)}\n"
+              f"Skill text is held in a session's context from the moment it "
+              f"was invoked. Tell those sessions to re-read the file, or "
+              f"restart them.")
     return 0
 
 

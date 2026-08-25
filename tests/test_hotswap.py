@@ -257,3 +257,75 @@ def test_a_kept_directory_left_by_a_crash_is_cleared(tmp_path):
     hotswap.swap(root, "0.51.0", hotswap.installed(root))
     assert not (root / "0.47.0.real/leftover.py").exists()
     assert (root / "0.47.0.real/hooks/trace_hook.py").read_text() == "VERSION = '0.47.0'\n"
+
+
+def skill(root, version, name, text):
+    d = root / version / "skills" / name
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "SKILL.md").write_text(text)
+
+
+def test_a_changed_skill_is_named_because_the_swap_cannot_deliver_it(tmp_path):
+    """A hook updates the moment its file changes, because it is a subprocess.
+    A skill does not: its text enters a session's context when invoked and
+    stays there. Reporting the swap without naming these reads as a whole
+    update when half of it did not land."""
+    root = cache(tmp_path, "0.47.0", "0.51.0")
+    skill(root, "0.47.0", "sitrep", "bad news above good news\n")
+    skill(root, "0.51.0", "sitrep", "rank by what needs attention\n")
+    skill(root, "0.47.0", "verify", "same\n")
+    skill(root, "0.51.0", "verify", "same\n")
+    done = hotswap.swap(root, "0.51.0", hotswap.installed(root))
+    moved = [l.split(" ->")[0] for l in done if " -> " in l]
+    assert hotswap.changed_skills(root, moved, "0.51.0") == ["sitrep"]
+
+
+def test_a_skill_that_is_new_in_the_target_counts_as_changed(tmp_path):
+    """A session that never had it cannot have loaded it, and it is still
+    guidance the session is not following."""
+    root = cache(tmp_path, "0.47.0", "0.51.0")
+    skill(root, "0.51.0", "brand-new", "text\n")
+    done = hotswap.swap(root, "0.51.0", hotswap.installed(root))
+    moved = [l.split(" ->")[0] for l in done if " -> " in l]
+    assert hotswap.changed_skills(root, moved, "0.51.0") == ["brand-new"]
+
+
+def test_no_skills_directory_reports_nothing_rather_than_failing(tmp_path):
+    root = cache(tmp_path, "0.47.0", "0.51.0")
+    done = hotswap.swap(root, "0.51.0", hotswap.installed(root))
+    moved = [l.split(" ->")[0] for l in done if " -> " in l]
+    assert hotswap.changed_skills(root, moved, "0.51.0") == []
+
+
+def test_a_version_with_no_skills_of_its_own_is_skipped(tmp_path):
+    """Only the versions that were actually moved can tell you what a session
+    had, and an old install may predate skills entirely."""
+    root = cache(tmp_path, "0.42.0", "0.47.0", "0.51.0")
+    skill(root, "0.47.0", "sitrep", "old\n")
+    skill(root, "0.51.0", "sitrep", "new\n")
+    done = hotswap.swap(root, "0.51.0", hotswap.installed(root))
+    moved = [l.split(" ->")[0] for l in done if " -> " in l]
+    assert hotswap.changed_skills(root, moved, "0.51.0") == ["sitrep"]
+
+
+def test_the_swap_output_tells_the_caller_to_go_and_say_so(tmp_path, capsys,
+                                                           monkeypatch):
+    root = cache(tmp_path, "0.47.0", "0.51.0")
+    skill(root, "0.47.0", "sitrep", "old\n")
+    skill(root, "0.51.0", "sitrep", "new\n")
+    monkeypatch.setattr("sys.argv", ["hotswap", "--root", str(root)])
+    assert hotswap.main() == 0
+    out = capsys.readouterr().out
+    assert "sitrep" in out and "re-read" in out
+
+
+def test_a_directory_under_skills_with_no_skill_file_is_not_named(tmp_path):
+    """A stray directory is not a skill, and naming it would send someone to
+    tell a session to re-read a file that does not exist."""
+    root = cache(tmp_path, "0.47.0", "0.51.0")
+    skill(root, "0.47.0", "sitrep", "same\n")
+    skill(root, "0.51.0", "sitrep", "same\n")
+    (root / "0.51.0/skills/__pycache__").mkdir()
+    done = hotswap.swap(root, "0.51.0", hotswap.installed(root))
+    moved = [l.split(" ->")[0] for l in done if " -> " in l]
+    assert hotswap.changed_skills(root, moved, "0.51.0") == []
