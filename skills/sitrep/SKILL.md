@@ -1,6 +1,6 @@
 ---
 name: sitrep
-description: Report in military brief format, BLUF first. Use whenever the user says "investigate", "report", "resolve", "assess", "tell me", "what happened", "status", or sends a screenshot expecting you to read and act on it. Enforces bottom line in the first sentence, bad news above good news, evidence beside every claim, stated confidence, and a named gap for anything unverified. Run clarity.py before sending.
+description: Report in military brief format, BLUF first. Use whenever the user says "investigate", "report", "resolve", "assess", "tell me", "what happened", "status", or sends a screenshot expecting you to read and act on it. Enforces bottom line in the first sentence, ranking by what needs attention, evidence beside every claim, stated confidence, and a named gap for anything unverified. Run clarity.py before sending.
 allowed-tools: Read Grep Glob Bash
 ---
 
@@ -78,7 +78,8 @@ Use this shape whatever the verb. It scales from three lines to a page.
 ```
 BLUF: <one sentence. The answer, the finding, or the recommendation.>
 
-<the worst news, immediately, before anything good>
+<whatever needs attention most, above anything needing less. Omit when
+nothing does.>
 
 FINDINGS
 - <fact>  -  <the evidence, a number, a command output, a quoted line>
@@ -102,12 +103,17 @@ exists.
 Not "Two things." Not a restatement of the question. The finding. If your opening
 sentence could sit on any other report, it is not a BLUF.
 
-**2. Bad news goes above good news, and only if it is still news.** A reader
-stops at the top once they have what they need, so anything you bury you have
-hidden. If you were wrong in a way that still affects them, say so before you
-say what you fixed.
+**2. Rank by what needs attention, and count only what is still live.** A
+reader stops at the top once they have what they need, so anything you bury you
+have hidden. If you were wrong in a way that still affects them, say so before
+you say what you fixed.
 
-A failure you already repaired is not bad news, it is a diary entry. A theory
+Ranked by attention rather than by tone, because "worst" sends a writer hunting
+for something to feel bad about and the hunt always succeeds. What ranks first
+is whatever the reader must act on soonest, and that is often a plain fact with
+no colour to it at all.
+
+A failure you already repaired needs no attention, it is a diary entry. A theory
 you replaced before telling anyone is not a correction, it is your working. Both
 cost the reader a full read to establish they can do nothing with either.
 
@@ -117,8 +123,10 @@ never going to touch it. "I told you the cause was X and it is not" fails both
 if you never acted on X. A session led with those two and was asked what made it
 think anyone cared. Nothing did.
 
-**You do not have to say something.** If there is nothing the reader must act
-on, the honest report is short or absent. Filling the space is not thoroughness.
+**Nothing needing attention is a result, not an empty slot.** If there is
+nothing the reader must act on, the honest report is short or absent. Say that
+and stop. Promoting the nearest imperfect thing to fill the space is not
+thoroughness, it is manufacturing a finding.
 
 **2b. Do not size the claim to the effort.** A large finding makes the hour
 you spent look like a discovery. A small one makes it look like you checked two
@@ -291,8 +299,8 @@ Fix what it flags, then send. It prints your first sentence back at you, which i
 the check most often failed. The band is 20 to 40: under 20 you have cut meaning
 out, over 40 it takes two passes.
 
-Then four operations: first sentence carries the finding, bad news above good,
-headings counted, em dashes counted.
+Then four operations: first sentence carries the finding, ranked by what needs
+attention, headings counted, em dashes counted.
 
 ## Worked example
 

@@ -89,7 +89,7 @@ TOOLS = (
             "punctuation. Deliberately does not apply the clarity index, "
             "because a dozen words is too small a sample for it to mean "
             "anything. Reports as unassessed whether the subject says what "
-            "changed and whether bad news sits above good news.",
+            "changed and whether the body is ranked by what needs attention.",
         "inputSchema": TEXT_INPUT,
     },
 )

@@ -3,7 +3,7 @@
 Most agent skills promise to make a model better at something. These make it report what it cannot do.
 
 - **`root-cause`** forbids a causal claim without evidence beside it, and keeps asking why until it reaches a design decision, a process gap, or something   outside the system.
-- **`sitrep`** puts the finding in the first sentence, bad news above good news, the confidence named per claim, and a gap named for anything unverified.
+- **`sitrep`** puts the finding in the first sentence, ranks by what needs attention, the confidence named per claim, and a gap named for anything unverified.
 - **`decision-brief`** writes a request for a decision in five sections: background, current situation, options priced against what they buy, one   recommendation, and the cost of doing nothing stated in figures.
 - **`honest-code`** applies the same discipline to the code: no hidden state, no swallowed error, no implicit default. It delegates every mechanically   decidable rule to a linter and names the three it cannot decide, rather than   reporting a verdict it did not reach.
 - **`tools/decision.py`** gates the form of a decision brief and refuses to judge its content, printing what it did not examine under every verdict.

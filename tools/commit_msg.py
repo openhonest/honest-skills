@@ -14,8 +14,8 @@ measurement and is not one.
 
 What survives at this size is the word-level work, plus the subject-line length
 that every git tool assumes. What does not survive is the structure: whether the
-subject carries the change, and whether bad news sits above good news in the
-body. Those are reported and never gated, because a machine cannot tell a buried
+subject carries the change, and whether the body is ranked by what needs
+attention. Those are reported and never gated, because a machine cannot tell a buried
 lead from a deliberate one.
 
 Existing tools cover the neighbouring ground. gitlint and commitizen check

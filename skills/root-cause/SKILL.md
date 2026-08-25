@@ -94,7 +94,8 @@ The chain is the work. The report is not the chain. Lead with the root cause and
 ```
 BLUF: <the root cause, in one sentence, and what it breaks>
 
-<the worst news: blast radius, or what is still broken, before any fix>
+<what needs attention most: blast radius, or what is still broken, before any
+fix. Omit when the fix is verified and nothing is outstanding.>
 
 CHAIN
 - Symptom      <what is observed, the specific case>
