@@ -20,8 +20,15 @@ def running_version() -> str:
     knows what it is. Nothing was reporting it, and a session executes whatever
     was registered when it launched, so a session could run a version several
     releases old with nothing saying so.
+
+    Resolved with realpath rather than abspath, so that a version directory
+    replaced by a link to a newer one reports the version it actually runs.
+    A session fixes this path when it launches and cannot be told to look
+    elsewhere, so a link is the only way to hand a running session new code.
+    With abspath the row would carry the name of the directory rather than the
+    name of the code, which is the reading that makes a hot swap silent.
     """
-    m = re.search(r"/honest-skills/(\d+\.\d+\.\d+)/", os.path.abspath(__file__))
+    m = re.search(r"/honest-skills/(\d+\.\d+\.\d+)/", os.path.realpath(__file__))
     return m.group(1) if m else ""
 
 
