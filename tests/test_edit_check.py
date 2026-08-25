@@ -443,10 +443,10 @@ def test_an_unchecked_extension_is_recorded_rather_than_silent(tmp_path, monkeyp
     It cannot report on a file it does not check, so it records instead."""
     log = tmp_path / "t.jsonl"
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
-    f = tmp_path / "notes.md"; f.write_text("hello")
+    f = tmp_path / "notes.txt"; f.write_text("hello")
     assert run_hook(payload(f), monkeypatch) == (0, "")
     row = json.loads(log.read_text().splitlines()[0])
-    assert "not a checked extension: .md" in row["why"]
+    assert "not a checked extension: .txt" in row["why"]
 
 
 # --- only the lines this edit touched ---------------------------------------
@@ -1436,3 +1436,63 @@ def test_a_file_this_session_edited_carries_no_such_caveat(
     _fire(payload(f), monkeypatch)
     code, err = _fire(json.dumps({"session_id": "s1"}), monkeypatch)
     assert code == 2 and "another session" not in err
+
+
+# --- a line break inside a paragraph -----------------------------------------
+
+def test_a_wrapped_paragraph_in_markdown_is_reported(tmp_path, monkeypatch):
+    """Saying it did not work. It is in the global instructions in capitals, it
+    is in memory, and on 2026-08-25 Adam had to shout four times running: four
+    generated files wrapped at eighty columns, fixed, and then the replies
+    reporting the fix were wrapped too. A rule with no check behind it is
+    advice, and advice is what gets lost."""
+    f = tmp_path / "n.md"
+    f.write_text("This is a paragraph that someone has broken across two\nlines at about eighty columns, which is the thing.\n")
+    code, err = _fire(payload(f), monkeypatch)
+    assert code == 2
+    assert "line break(s) inside a paragraph" in err and "line 1" in err
+
+
+def test_one_paragraph_on_one_line_is_silent(tmp_path, monkeypatch):
+    f = tmp_path / "n.md"
+    f.write_text("This is a paragraph on a single line, however long it happens to run, and the editor is left to wrap it.\n\nAnd a second one.\n")
+    assert _fire(payload(f), monkeypatch) == (0, "")
+
+
+@pytest.mark.parametrize("body", [
+    "```\nshort\nlines\n```\n",
+    "| a | b |\n| - | - |\n| 1 | 2 |\n",
+    "- one\n- two\n- three\n",
+    "> quoted\n> lines\n",
+    "# heading\n## another\n",
+    "---\nname: thing\ndescription: short\n---\n\nA single line of prose that runs on and on without any break in it at all.\n",
+    "    indented code\n    more of it\n",
+])
+def test_structure_keeps_its_own_line_breaks(tmp_path, monkeypatch, body):
+    """Fenced code, tables, lists, quotes, headings, frontmatter and indented
+    code all mean their breaks. Only prose is joined."""
+    f = tmp_path / "n.md"; f.write_text(body)
+    assert _fire(payload(f), monkeypatch) == (0, "")
+
+
+def test_a_long_line_followed_by_prose_is_not_a_wrap(tmp_path, monkeypatch):
+    """Two long adjacent lines are two paragraphs someone chose not to space
+    out, not a wrap. Reporting them would train the reader to skip this."""
+    long = "x" * 120
+    f = tmp_path / "n.md"; f.write_text(f"{long}\n{long}\n")
+    assert _fire(payload(f), monkeypatch) == (0, "")
+
+
+def test_the_wrap_check_declines_a_file_that_is_not_markdown():
+    """Called directly on source it returns nothing, so the check cannot leak
+    into the code path that already has three of its own."""
+    assert edit_check.hard_wrap_finding("a.py", "x = 1\ny = 2\n") is None
+
+
+def test_a_markdown_file_that_vanished_is_not_a_finding(tmp_path, monkeypatch):
+    """The file is gone by the time the turn ends. That is not a fact about
+    anyone's prose."""
+    f = tmp_path / "n.md"; f.write_text("one line only\n")
+    raw = payload(f)
+    f.unlink()
+    assert _fire(raw, monkeypatch) == (0, "")
