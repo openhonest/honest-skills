@@ -52,6 +52,18 @@ def stale_note() -> str:
 
 
 SESSION = ""            # set once per run by the hook, from its own input
+# Whether a hook actually fired this run. Armed by note_session(), which only
+# the three hook entry points call.
+#
+# The trace is a record of hook firings, and until now it recorded anything at
+# all that called trace(). The test suite wrote 223 rows per run, and every
+# fire rate reported off this file for a day was contaminated. That was patched
+# by redirecting the trace in conftest, which fixed the tests and left the shape
+# alone; four days later a one-off probe run by hand put its own rows in the
+# live file and inflated a standing count. The same class twice means the
+# shape is the defect, so the gate now lives here rather than in each caller
+# remembering to redirect.
+FIRED = False
 
 
 def note_session(raw: str) -> None:
@@ -63,7 +75,8 @@ def note_session(raw: str) -> None:
     row since the field was added has said "". One fact, two sources, and the
     wrong one was the one people read.
     """
-    global SESSION
+    global SESSION, FIRED
+    FIRED = True
     try:
         SESSION = str((json.loads(raw) or {}).get("session_id") or "")[:8]
     except (ValueError, TypeError, AttributeError):
@@ -83,7 +96,7 @@ def trace(event: str, verdict: str, why: str, **facts: object) -> None:
     tracing must never be able to break the thing it observes.
     """
     path = os.environ.get("HONEST_HOOK_TRACE")
-    if not path:
+    if not path or not FIRED:
         return
     try:
         with open(path, "a") as fh:
@@ -114,6 +127,13 @@ def trace(event: str, verdict: str, why: str, **facts: object) -> None:
             # only question that says the loop closed rather than merely
             # spoke.
             row.update({k: v for k, v in facts.items() if v is not None})
+            # Resolved, so one file is one key. The same file arrived as
+            # "hooks/edit_check.py" and as its absolute path within two hours,
+            # and every consumer keyed on the string: one file read as two, and
+            # a rule standing on one file read as standing on two. Whatever the
+            # caller's working directory was, the file is the same file.
+            if row.get("file"):
+                row["file"] = os.path.realpath(str(row["file"]))
             fh.write(json.dumps(row) + "\n")
     except OSError:
         pass

@@ -44,9 +44,17 @@ def transcript(tmp_path, *texts):
 
 
 def stop(tmp_path, text, session=None):
-    return dc.on_stop({"hook_event_name": "Stop",
-                       "transcript_path": transcript(tmp_path, text),
-                       "session_id": session or str(uuid.uuid4())})
+    """The handler, reached the way main() reaches it.
+
+    main() arms the trace before dispatching, and the trace writes nothing
+    unless a hook fired. Calling the handler without that step exercises a path
+    no hook takes and records rows no hook would have written.
+    """
+    payload = {"hook_event_name": "Stop",
+               "transcript_path": transcript(tmp_path, text),
+               "session_id": session or str(uuid.uuid4())}
+    dc.note_session(json.dumps(payload))
+    return dc.on_stop(payload)
 
 
 # --- the cases where firing would be wrong ----------------------------------
@@ -197,6 +205,7 @@ def test_ask_user_question_is_recorded_even_though_it_passes(tmp_path, monkeypat
     """Silence would make "ran and let it through" look like "never ran"."""
     log = tmp_path / "trace.jsonl"
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    dc.note_session('{"session_id": "s"}')       # as main() does before dispatch
     dc.on_pre_tool_use({
         "hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion",
         "transcript_path": transcript(tmp_path, "Options."),
@@ -680,6 +689,7 @@ def test_an_empty_transcript_is_recorded_as_a_decline(tmp_path, monkeypatch):
     log = tmp_path / "trace.jsonl"
     monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
     p = tmp_path / "t.jsonl"; p.write_text("")
+    dc.note_session('{"session_id": "s"}')       # as main() does before dispatch
     dc.on_stop({"transcript_path": str(p), "session_id": "s"})
     assert json.loads(log.read_text())["why"] == "no assistant text to read"
 

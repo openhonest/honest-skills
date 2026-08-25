@@ -58,7 +58,7 @@ import clarity   # noqa: E402
 import decision  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from trace_hook import trace  # noqa: E402
+from trace_hook import note_session, trace  # noqa: E402
 
 # Only the last stretch of the transcript is read. It is a JSONL file that
 # reaches tens of megabytes in a long session, and a hook that reads all of it
@@ -625,8 +625,13 @@ EVENTS = {"Stop": on_stop, "PreToolUse": on_pre_tool_use}
 
 
 def main() -> int:
+    raw = sys.stdin.read()
+    # This hook never did this, so every row it has ever written carries an
+    # empty session and cannot be attributed. It also arms the trace, which is
+    # what says a hook fired rather than something calling trace() by hand.
+    note_session(raw)
     try:
-        payload = json.loads(sys.stdin.read())
+        payload = json.loads(raw)
     except (ValueError, TypeError):
         return 0
     if not isinstance(payload, dict):
