@@ -194,22 +194,24 @@ def main() -> int:
               else f"already at {sha[:7]}")
         return 0
 
-    stale = []
+    stale, blocks = [], []
     for p in files:
-        found = block_of(p.read_text())
+        text = p.read_text()
+        found = block_of(text)
         if found is None:
             print(f"{p.relative_to(a.root)}: a BEGIN marker with no matching "
                   f"END. The block cannot be compared.", file=sys.stderr)
             return 1
         old_body, old_sha = found
+        blocks.append((p, text, old_body))
         if old_body != body or old_sha != sha:
             stale.append((p, old_sha))
-    dangling = []
-    for p in files:
-        found = block_of(p.read_text())
-        if found:
-            for name in citations(p.read_text(), found[0]):
-                dangling.append((p, name))
+    # Reuses what the loop above already parsed. Re-reading and re-parsing here
+    # meant handling a missing block a second time, and that branch could never
+    # run: the loop above returns before reaching it. Unreachable handling for a
+    # case that cannot occur reads as care and is one more thing to keep true.
+    dangling = [(p, name) for p, text, old_body in blocks
+                for name in citations(text, old_body)]
     if dangling:
         for p, name in dangling:
             print(f"{p.relative_to(a.root)}: cites \"{name}\", which the "
