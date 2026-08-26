@@ -238,3 +238,71 @@ def test_no_token_means_an_anonymous_request(monkeypatch):
     monkeypatch.setattr(vc.urllib.request, "urlopen", urlopen)
     vc.fetch("https://example.invalid/x")
     assert "Authorization" not in seen
+
+
+# --- citations into the vendored text ----------------------------------------
+
+CITING = ("cites [[One principle]] here\n\n"
+          f"{vc.BEGIN} @ {SHA} -->\n## One principle\ntext\n{vc.END}\n")
+
+
+def test_a_citation_that_resolves_is_not_reported():
+    body, _ = vc.block_of(CITING)
+    assert vc.citations(CITING, body) == []
+
+
+def test_a_citation_the_vendored_text_does_not_define_is_reported():
+    """A vendored copy carries the citations too, so a rename breaks them
+    inside the copy exactly as silently as in the source."""
+    text = CITING.replace("[[One principle]]", "[[A principle that went away]]")
+    body, _ = vc.block_of(text)
+    assert vc.citations(text, body) == ["A principle that went away"]
+
+
+def test_a_rename_upstream_breaks_the_citation_and_is_caught():
+    """The case this exists for. The skill did not change; the source did."""
+    text = CITING.replace("## One principle", "## One Principle, Renamed")
+    body, _ = vc.block_of(text)
+    assert vc.citations(text, body) == ["One principle"]
+
+
+def test_a_name_inside_the_vendored_block_is_not_read_as_a_citation():
+    """The source may reference its own principles. Those are its author's to
+    keep correct, and reporting them would fail every push over someone else's
+    document."""
+    text = CITING.replace("## One principle\ntext",
+                          "## One principle\nsee [[Some other thing]]")
+    body, _ = vc.block_of(text)
+    assert vc.citations(text, body) == []
+
+
+def test_citations_are_marked_rather_than_guessed_from_capitals():
+    """The first attempt inferred them from capitalisation. Renaming a cited
+    principle produced no finding: a check that goes quiet exactly when the
+    thing it checks is broken. Ordinary prose naming a principle without the
+    brackets is not a citation and is not checked, which is a real limit and
+    the price of an exact answer."""
+    text = CITING.replace("[[One principle]]", "One principle")
+    body, _ = vc.block_of(text)
+    assert vc.citations(text, body) == []
+
+
+def test_a_dangling_citation_fails_the_push(tmp_path, monkeypatch, capsys):
+    p = tmp_path / "SKILL.md"
+    p.write_text(f"cites [[Gone]]\n\n{vc.BEGIN} @ {SHA} -->\n{BODY}\n{vc.END}\n")
+    source(monkeypatch)
+    assert run(monkeypatch, tmp_path) == 1
+    assert "which the vendored text does not define" in capsys.readouterr().err
+
+
+def test_a_second_file_with_no_dangling_citation_is_passed_over(
+        tmp_path, monkeypatch, capsys):
+    """Two vendoring files, one citing something real. The loop has to keep
+    going past a clean one rather than stopping at the first."""
+    vendored(tmp_path, name="a/SKILL.md")
+    p = tmp_path / "b" / "SKILL.md"
+    p.parent.mkdir()
+    p.write_text(f"cites [[Gone]]\n\n{vc.BEGIN} @ {SHA} -->\n{BODY}\n{vc.END}\n")
+    source(monkeypatch)
+    assert run(monkeypatch, tmp_path) == 1
+    assert "Gone" in capsys.readouterr().err

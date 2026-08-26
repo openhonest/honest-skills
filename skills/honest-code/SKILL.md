@@ -226,7 +226,7 @@ Extract one pure function from one class method at a time. The method now calls 
 **Reviewing or refactoring:** run `honest-check` first, then read for the rules it cannot decide. Report in this order:
 
 1. What the linter flagged, by rule ID
-2. What you found that it cannot see: rule 16 always, rules 6 and 7 partly, and any case where the code passes the letter and breaks the intent
+2. What you found that it cannot see: [[Declarative Equivalents Over Framework Lifecycle Hooks]] always, [[DOM as State (DATAOS)]] and [[HTML Attributes Over Imperative DOM Manipulation]] partly, and any case where the code passes the letter and breaks the intent
 3. What you did not check, and why
 
 Fix what you can. Where a violation cannot be fixed without breaking an external API, say so and leave it.

@@ -137,6 +137,33 @@ def sync(files: list[Path], body: str, sha: str) -> list[Path]:
     return changed
 
 
+def citations(text: str, body: str) -> list[str]:
+    """Names cited as [[Principle Name]] that the vendored block does not define.
+
+    A vendored copy carries the citations too, so a rename breaks them inside
+    the copy exactly as silently as in the source, and in a place nobody is
+    watching. This is that place watching.
+
+    It exists because of a break nothing reported. Replacing a skill's restated
+    rules with the vendored text deleted the numbering the rest of the file
+    cited, and "rule 16 always, rules 6 and 7 partly" went on pointing at
+    numbers that no longer existed anywhere. Four hours, every gate in this
+    repository green, and it surfaced only because somebody asked what the
+    citations resolved to.
+
+    A citation has to be marked to be checked. The first attempt at this
+    guessed at them from capitalisation, and when a cited principle was renamed
+    it reported nothing wrong: a check that goes quiet exactly when the thing
+    it checks is broken. So the marker is explicit. [[Name]] costs the writer
+    two brackets and buys an exact answer instead of a plausible one.
+    """
+    defined = {m.group(1).strip() for m in re.finditer(r"^## (.+)$", body, re.M)}
+    at, end = text.find(BEGIN), text.find(END)
+    outside = text[:at] + text[end + len(END):] if at >= 0 else text
+    cited = {m.strip() for m in re.findall(r"\[\[([^\]]+)\]\]", outside)}
+    return sorted(cited - defined)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--sync", action="store_true",
@@ -177,6 +204,20 @@ def main() -> int:
         old_body, old_sha = found
         if old_body != body or old_sha != sha:
             stale.append((p, old_sha))
+    dangling = []
+    for p in files:
+        found = block_of(p.read_text())
+        if found:
+            for name in citations(p.read_text(), found[0]):
+                dangling.append((p, name))
+    if dangling:
+        for p, name in dangling:
+            print(f"{p.relative_to(a.root)}: cites \"{name}\", which the "
+                  f"vendored text does not define", file=sys.stderr)
+        print("\nA rename upstream breaks a citation in the copy as silently "
+              "as in the source. Fix the citation or take the newer text.",
+              file=sys.stderr)
+        return 1
     if not stale:
         print(f"vendored copies match the source at {sha[:7]}")
         return 0
