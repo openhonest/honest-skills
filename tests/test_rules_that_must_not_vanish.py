@@ -100,3 +100,43 @@ def test_the_trace_still_records_only_hook_firings():
     assert hasattr(trace_hook, "FIRED"), \
         "the firing gate has gone; anything calling trace() is recorded again"
     assert trace_hook.FIRED is False, "the gate must start closed"
+
+
+def test_a_broken_advisory_does_not_take_the_findings_with_it(monkeypatch):
+    """The freshness and version notes are advice about the tooling. The
+    findings beside them are the hook's actual job.
+
+    Called plainly, a fault in either propagated out of render and the hook
+    reported nothing at all, so a note about whether the principles were
+    current would have stopped a real finding reaching a writer. Found by
+    breaking the module and watching a live finding vanish, not by reading the
+    code."""
+    edit_check = load("edit_check")
+    def boom(*a, **k):
+        raise RuntimeError("the advisory is broken")
+    monkeypatch.setattr(edit_check, "principles_note", boom)
+    monkeypatch.setattr(edit_check, "stale_note", boom)
+    out = edit_check.render("x.py", [{"verdict": "OUT_OF_SPEC",
+                                      "indicator": "L1.21",
+                                      "detail": "a real finding",
+                                      "action": "fix it"}])
+    assert "a real finding" in out
+
+
+def test_a_broken_advisory_is_recorded_rather_than_swallowed(monkeypatch, tmp_path):
+    """Swallowed in the turn, recorded in the trace. A fault nobody can see is
+    the defect this project exists to name; a fault that breaks the writer's
+    turn is worse. The trace is where it can be counted without costing a turn."""
+    edit_check = load("edit_check")
+    trace_hook = load("trace_hook")
+    log = tmp_path / "t.jsonl"
+    monkeypatch.setenv("HONEST_HOOK_TRACE", str(log))
+    monkeypatch.setattr(edit_check, "trace", trace_hook.trace)
+    trace_hook.FIRED = True
+    monkeypatch.setattr(edit_check, "principles_note",
+                        lambda *a, **k: (_ for _ in ()).throw(ValueError("bad")))
+    monkeypatch.setattr(edit_check, "stale_note", lambda: "")
+    edit_check.advisories()
+    rows = [__import__("json").loads(l) for l in log.read_text().splitlines()]
+    assert any(r["event"] == "advisory" and "principles_note raised" in r["why"]
+               for r in rows)

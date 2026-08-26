@@ -583,6 +583,37 @@ def findings_for(path: str, text: str,
              if f is not None], grade)
 
 
+def advisories() -> list[str]:
+    """The version and freshness notes, and never an exception.
+
+    These are advice about the tooling. The findings beside them are the
+    hook's actual job. Called plainly, a fault in either one propagates out of
+    render and the hook reports nothing at all: a note about whether the
+    principles are current would stop a real finding reaching a writer. Tested
+    by breaking the freshness module and watching a live finding vanish.
+
+    This is not the interior distrust the principles warn against. It is a
+    boundary between the thing that must work and two things that only inform,
+    and the direction of failure across it is the whole point.
+
+    Swallowed in the turn, recorded in the trace. A fault nobody can see is
+    the defect this project exists to name, and a fault that breaks the writer's
+    turn is worse. The trace is where it can be counted without costing anyone
+    a turn.
+    """
+    out = []
+    for name, get in (("stale_note", stale_note),
+                      ("principles_note", lambda: principles_note(SKILL_FILE))):
+        try:
+            note = get()
+        except Exception as e:                    # noqa: BLE001
+            trace("advisory", "fired", f"{name} raised: {type(e).__name__}: {e}")
+            continue
+        if note:
+            out.append(note)
+    return out
+
+
 def render(path: str, findings: list[dict]) -> str:
     """The coverage first, then the findings.
 
@@ -597,9 +628,8 @@ def render(path: str, findings: list[dict]) -> str:
     # smaller lie than over-reporting it and it is still a lie.
     not_run = sum(1 for f in findings if f["verdict"] == "NOT_RUN")
     lines = [f"honest-code: {CHECKS - not_run} of {CHECKS} checks ran on {name}"]
-    for note in (stale_note(), principles_note(SKILL_FILE)):
-        if note:
-            lines.append(f"  {note}")
+    for note in advisories():
+        lines.append(f"  {note}")
     for f in findings:
         lines.append(f"  {f['verdict']}  {f['indicator']}  {f['detail']}")
         lines.append(f"      {f['action']}")

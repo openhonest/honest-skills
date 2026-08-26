@@ -38,6 +38,44 @@ jobs:
           coverage run --branch --source=tools,mcp,hooks -m pytest tests/ -q
           coverage report --fail-under=100 --show-missing
 
+  # The commit-message checker was the one gate with nothing behind it. It runs
+  # as a local commit-msg hook, so it covers anyone who ran `pre-commit
+  # install` and nobody else: a fresh clone, a contributor who skipped the
+  # setup, or a machine where the hook was removed all commit unchecked, and
+  # nothing anywhere reports it. Every other gate here has a second copy in CI.
+  # This is that copy.
+  commit-messages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Enough history to see the commits this push or pull request added.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: the checker reads the messages of the commits being added
+        run: |
+          # Only what this change introduces. Running it over the whole history
+          # would fail on commits written before the rule existed, and a gate
+          # that always fails is a gate people learn to ignore.
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$base" ] || ! git cat-file -e "$base" 2>/dev/null; then
+            echo "no base commit to compare against; checking the tip only"
+            range="-1"
+          else
+            range="$base..${{ github.sha }}"
+          fi
+          fail=0
+          for sha in $(git rev-list $range); do
+            git log -1 --format=%B "$sha" > /tmp/msg.txt
+            if ! python tools/commit_msg.py /tmp/msg.txt; then
+              echo "::error::$(git log -1 --format='%h %s' "$sha")"
+              fail=1
+            fi
+          done
+          exit $fail
+
   prose:
     runs-on: ubuntu-latest
     steps:
