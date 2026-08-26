@@ -32,12 +32,30 @@ def running_version() -> str:
     return m.group(1) if m else ""
 
 
+def as_number(version: str) -> tuple[int, ...]:
+    """A version ordered as numbers, or () when it does not parse.
+
+    Compared as text, 0.9.0 sorts above 0.54.0.
+    """
+    parts = version.split(".")
+    return tuple(int(p) for p in parts) if all(p.isdigit() for p in parts) else ()
+
+
 def stale_note() -> str:
-    """A line naming the running and registered versions when they differ.
+    """A line telling a session it is running code older than what is installed.
 
     Empty when they match, when either is unknown, or when running from a
     source tree rather than an install. A hook that cannot tell says nothing
     rather than guessing it is current.
+
+    Empty too when the session is AHEAD of the recorded install, which is what
+    a hot swap produces: the code changes under a live session and nothing
+    updates the installer's record. Until 2026-08-25 this compared the two for
+    difference alone and always read the recorded one as newer, so the moment
+    hot swapping existed the note began telling sessions to restart onto a
+    version seven releases older than the one they were running. Advice to move
+    backwards, printed beside a finding, in the voice of the thing that catches
+    exactly this.
     """
     running = running_version()
     if not running:
@@ -52,9 +70,12 @@ def stale_note() -> str:
         if "honest-skills" not in name or not entries:
             continue
         registered = entries[0].get("version") or ""
-        if registered and registered != running:
+        here, there = as_number(running), as_number(registered)
+        if not here or not there:
+            return ""
+        if there > here:
             return (f"this session runs {running}, {registered} is installed. "
-                    f"Restart to pick it up.")
+                    f"Restart, or hot swap, to pick it up.")
     return ""
 
 

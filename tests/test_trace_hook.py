@@ -183,3 +183,63 @@ def test_a_call_outside_a_hook_firing_writes_nothing(tmp_path, monkeypatch):
     trace_hook.note_session('{"session_id": "abcdefgh"}')
     trace_hook.trace("Stop:edit", "fired", "a firing")
     assert json.loads(log.read_text())["why"] == "a firing"
+
+
+def _install(tmp_path, monkeypatch, registered, running):
+    home = tmp_path / "home"; (home / ".claude" / "plugins").mkdir(parents=True)
+    (home / ".claude" / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"plugins": {"honest-skills@m": [{"version": registered}]}}))
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(
+        trace_hook, "__file__",
+        f"/c/honest-skills/honest-skills/{running}/hooks/trace_hook.py")
+
+
+def test_a_session_ahead_of_the_recorded_install_is_told_nothing(
+        tmp_path, monkeypatch):
+    """A hot swap changes the code under a live session and nothing updates the
+    installer's record, so running is newer than registered. Compared for
+    difference alone, the note read the recorded version as the newer one and
+    told the session to restart onto a build seven releases older than the one
+    it was running. Advice to move backwards, printed beside a finding, in the
+    voice of the thing that catches exactly this."""
+    _install(tmp_path, monkeypatch, registered="0.47.0", running="0.54.0")
+    assert trace_hook.stale_note() == ""
+
+
+def test_a_session_behind_the_install_is_still_told(tmp_path, monkeypatch):
+    """The case the note exists for. It has to survive the fix to the case it
+    got wrong."""
+    _install(tmp_path, monkeypatch, registered="0.54.0", running="0.47.0")
+    note = trace_hook.stale_note()
+    assert "0.47.0" in note and "0.54.0" in note and "Restart" in note
+
+
+def test_versions_are_compared_as_numbers_not_as_text(tmp_path, monkeypatch):
+    """As text 0.9.0 sorts above 0.54.0, so a session on the newer build would
+    be told to go back to one from months ago."""
+    _install(tmp_path, monkeypatch, registered="0.9.0", running="0.54.0")
+    assert trace_hook.stale_note() == ""
+
+
+def test_a_version_that_does_not_parse_says_nothing(tmp_path, monkeypatch):
+    """Rather than ordering it against a real one and reporting the result. A
+    hook that cannot tell says nothing rather than guessing."""
+    _install(tmp_path, monkeypatch, registered="1.0.0-rc1", running="0.54.0")
+    assert trace_hook.stale_note() == ""
+
+
+def test_another_plugin_in_the_record_is_passed_over(tmp_path, monkeypatch):
+    """The file lists every installed plugin. Read without the name check, a
+    session would be told to restart because some unrelated plugin sits at a
+    different number."""
+    home = tmp_path / "home"; (home / ".claude" / "plugins").mkdir(parents=True)
+    (home / ".claude" / "plugins" / "installed_plugins.json").write_text(
+        json.dumps({"plugins": {"cloudflare@m": [{"version": "9.9.9"}],
+                                "empty-skills@m": [],
+                                "honest-skills@m": [{"version": "0.54.0"}]}}))
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(
+        trace_hook, "__file__",
+        "/c/honest-skills/honest-skills/0.54.0/hooks/trace_hook.py")
+    assert trace_hook.stale_note() == ""
