@@ -125,6 +125,67 @@ NAG_AFTER = 600.0
 MAX_CLAUSE_FINDINGS = 5
 
 
+WRAP_MAX = 100          # a prose line shorter than this, with prose under it, is a wrap
+
+
+def hard_wrap_finding(path: str, text: str) -> dict | None:
+    """A line break inside a paragraph of a markdown file.
+
+    One paragraph is one line, however long. The editor soft-wraps, so a hard
+    wrap fights it, breaks reflow in every renderer, and turns a one-word edit
+    into a whole-paragraph rewrap.
+
+    This exists because saying it did not work. It is in the global
+    instructions in capitals, it is in memory, and on 2026-08-25 Adam had to
+    shout at me four times in a row: I wrapped four generated files at eighty
+    columns, fixed them, and then wrapped the replies reporting the fix. A rule
+    with no check behind it is advice, and advice is what gets lost.
+
+    It was written that morning and deleted thirteen minutes later, inside a
+    commit about how long the Bash hook took to walk the home tree. The commit
+    message never mentioned it. Within the day another session hard-wrapped
+    markdown twice, once in the first commit of a repository built to hold the
+    rule. A check can be lost as quietly as a rule can, and riding out of the
+    tree in an unrelated commit is how.
+
+    Fenced code, tables, lists, quotes, headings and frontmatter all keep their
+    own line breaks and are skipped.
+    """
+    if Path(path).suffix.lower() not in {".md", ".markdown"}:
+        return None
+    lines = text.split("\n")
+    fence = front = False
+    bullet = re.compile(r"^(\s*)([-+]|\*(?!\*)|\d+[.)])\s")
+    wrapped = []
+    for i, line in enumerate(lines[:-1]):
+        s = line.strip()
+        if i == 0 and s == "---":
+            front = True
+            continue
+        if front:
+            front = s != "---"
+            continue
+        if s.startswith("```") or s.startswith("~~~"):
+            fence = not fence
+            continue
+        if fence or not s:
+            continue
+        if s.startswith(("#", ">", "|")) or bullet.match(line) or line.startswith("    "):
+            continue
+        nxt = lines[i + 1].strip()
+        if not nxt or nxt.startswith(("#", ">", "|", "```", "~~~")) or bullet.match(lines[i + 1]):
+            continue
+        if len(line) < WRAP_MAX:
+            wrapped.append(i + 1)
+    if not wrapped:
+        return None
+    return {"indicator": "WRAP", "verdict": "OUT_OF_SPEC",
+            "detail": f"{len(wrapped)} line break(s) inside a paragraph, first at "
+                      f"line {wrapped[0]}",
+            "action": "join each paragraph onto one line, however long, and let "
+                      "the editor wrap it"}
+
+
 def hook_input(raw: str) -> str:
     """Return the file path, or "" when there is not one.
 
@@ -819,6 +880,20 @@ def main() -> int:
             return 0
         print(report, file=sys.stderr)
         return 2                      # exit 2 puts stderr in front of the model
+    if Path(path).suffix.lower() in {".md", ".markdown"}:
+        # Markdown is not checked for code, but it is checked for this.
+        try:
+            body = Path(path).read_text(errors="replace")
+        except OSError:
+            return 0
+        found = hard_wrap_finding(path, body)
+        trace("PostToolUse:edit", "fired" if found else "declined",
+              "hard wrap" if found else "no hard wrap", file=path)
+        if not found:
+            return 0
+        print(f"honest-prose: {found['detail']} in {os.path.basename(path)}\n"
+              f"      {found['action']}", file=sys.stderr)
+        return 2
     if Path(path).suffix.lower() not in SOURCE:
         trace("PostToolUse:edit", "declined",
               f"not a checked extension: {Path(path).suffix or 'none'}",
