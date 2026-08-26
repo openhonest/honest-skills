@@ -276,3 +276,59 @@ def test_a_good_check_clears_the_previous_error(tmp_path, monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: R())
     state = fresh.refresh(1000.0)
     assert "error" not in state and state["verified_at"] == 1000.0
+
+
+def test_a_checker_that_never_ran_is_unmonitored_the_same_as_one_that_failed(
+        tmp_path, monkeypatch):
+    """The gap this test exists for. A failure count can only rise while the
+    checker is working well enough to fail. A closed laptop, a machine that was
+    off, a poll someone disabled, a scheduler that quietly stopped: none
+    produce a single failure, so a run-of-failures test sits at zero while
+    nothing has been verified for a fortnight.
+
+    This branch sat behind the error flag when it was written, and ten days of
+    nothing running at all reported silence."""
+    no_network(monkeypatch)
+    now = time.time()
+    cache(monkeypatch, tmp_path, checked_at=now - 10 * 86400,
+          verified_at=now - 10 * 86400, source_sha=MINE)   # no error, ever
+    note = fresh.principles_note(skill(tmp_path), now)
+    assert "unmonitored rather than current" in note
+    assert "no check has run since" in note
+
+
+def test_the_unmonitored_verdict_names_the_error_when_there_was_one(
+        tmp_path, monkeypatch):
+    """Both routes reach the same verdict and the reader needs to know which
+    one they are on. A standing 404 is acted on differently from a laptop that
+    was shut."""
+    no_network(monkeypatch)
+    now = time.time()
+    cache(monkeypatch, tmp_path, checked_at=now,
+          verified_at=now - 10 * 86400, source_sha=MINE,
+          error="HTTPError: 404 Not Found")
+    note = fresh.principles_note(skill(tmp_path), now)
+    assert "unmonitored rather than current" in note and "404" in note
+
+
+def test_a_copy_verified_yesterday_is_not_unmonitored_whatever_else_is_wrong(
+        tmp_path, monkeypatch):
+    """A false unmonitored is how a reader learns to ignore the line."""
+    no_network(monkeypatch)
+    now = time.time()
+    cache(monkeypatch, tmp_path, checked_at=now, verified_at=now - 86400,
+          source_sha=MINE, error="HTTPError: 403 rate limit exceeded")
+    note = fresh.principles_note(skill(tmp_path), now)
+    assert "unmonitored" not in note and "could not be checked" in note
+
+
+def test_age_is_measured_from_the_last_success_not_the_last_attempt(
+        tmp_path, monkeypatch):
+    """Attempts happen daily and prove nothing. Measured from the last attempt,
+    a checker failing every day forever would look permanently healthy."""
+    no_network(monkeypatch)
+    now = time.time()
+    cache(monkeypatch, tmp_path, checked_at=now,          # tried a second ago
+          verified_at=now - 10 * 86400, source_sha=MINE,  # last worked ten days back
+          error="URLError: timed out")
+    assert "unmonitored" in fresh.principles_note(skill(tmp_path), now)

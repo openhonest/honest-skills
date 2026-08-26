@@ -47,6 +47,14 @@ EVERY = 24 * 60 * 60          # a day; the text moves in commits, not in minutes
 # quietly 404s after a reorganisation never clears, and each produces the same
 # message as the rate limit, forever. Without a clock on it, a copy nothing can
 # ever check again reports what a copy checked ninety seconds ago reports.
+#
+# Seven days, chosen for headroom rather than measured. Everything transient
+# here clears in hours: a rate limit within one, a GitHub incident occasionally
+# spanning a day. Everything permanent never clears at all, so there is no
+# middle ground to tune for and the threshold only has to clear the longest
+# plausible outage. Two days would separate them. Seven is generous, and
+# generous is the right error, because a false unmonitored is how a reader
+# learns to ignore the line.
 UNMONITORED_AFTER = 7 * 24 * 60 * 60
 TIMEOUT = 10
 BEGIN = "<!-- BEGIN VENDORED honest-code-principles.md"
@@ -156,17 +164,31 @@ def principles_note(skill: Path, now: float | None = None) -> str:
     if due(state, now):
         start_refresh()
     verified_at = float(state.get("verified_at") or 0)
+    # Unmonitored is decided on age alone, before anything looks at whether a
+    # check failed. A failure count can only rise while the checker is working
+    # well enough to fail: a closed laptop, a machine that was off, a poll
+    # someone disabled and a scheduler that quietly stopped all produce zero
+    # failures while nothing is verified for a fortnight. Age advances whether
+    # or not anything runs, and it answers the question the reader actually
+    # has, which is how long since anyone knew this copy was current rather
+    # than how many times something went wrong.
+    #
+    # This branch sat behind the error flag when it was written, which made it
+    # a run-of-failures test wearing an age test's clothes, and ten days of
+    # nothing running at all reported silence.
+    if verified_at and now - verified_at >= UNMONITORED_AFTER:
+        when = time.strftime("%Y-%m-%d", time.localtime(verified_at))
+        why = (f"the last error was {state['error']}" if state.get("error")
+               else "no check has run since")
+        return (f"the Honest Code principles in this skill have not been "
+                f"verified since {when}. Treat this copy as unmonitored rather "
+                f"than current: {why}")
     if state.get("error"):
         if not verified_at:
             return ("the Honest Code principles in this skill have never been "
                     f"checked against their source ({state['error']}). Whether "
                     f"they are current is unknown.")
         when = time.strftime("%Y-%m-%d", time.localtime(verified_at))
-        if now - verified_at >= UNMONITORED_AFTER:
-            # A finding rather than a caveat. Nothing here clears on its own.
-            return (f"the Honest Code principles in this skill have not been "
-                    f"verified since {when}. Treat this copy as unmonitored "
-                    f"rather than current: the last error was {state['error']}")
         return ("the Honest Code principles in this skill could not be checked "
                 f"against their source today ({state['error']}). Last verified "
                 f"on {when}.")
