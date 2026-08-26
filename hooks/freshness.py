@@ -12,12 +12,24 @@ what it holds is behind the source. The cache is refreshed at most once a day by
 a detached process, so no hook ever waits on the network: a check that costs a
 session two seconds is a check someone turns off.
 
-Three states, kept apart on purpose, because the third is the one that goes
+Four states, kept apart on purpose, because the last two are the ones that go
 wrong. CURRENT says the copy matches. BEHIND names the commit it holds and the
-one the source is at. UNKNOWN says the check has not run or could not run, and
-it reads as unknown rather than as current. Not having looked is not evidence of
-being up to date, and every measurement defect found in this project has been
-the same shape: something unmeasured landing in the numerator.
+one the source is at. UNVERIFIED says today's check got no answer, and carries
+the date of the last one that did. UNMONITORED says nothing has succeeded for
+long enough that the arrangement itself should be assumed broken.
+
+The last two were one state until frame pointed out that they answer different
+questions. Unverified is a gap in today's information and clears on its own. A
+rate limit is gone within the hour. Unmonitored is the mechanism having
+stopped: a renamed repository, a deleted one, one made private, a revoked
+token, a URL that quietly 404s after a reorganisation. None of those clear, and
+each produces the same message as the rate limit, forever. Collapsed together,
+a copy nothing can ever check again reads exactly like one checked ninety
+seconds ago during a busy minute.
+
+Not having looked is not evidence of being up to date, and every measurement
+defect found in this project has been the same shape: something unmeasured
+landing in the numerator.
 """
 import json
 import os
@@ -29,6 +41,13 @@ from pathlib import Path
 API_URL = ("https://api.github.com/repos/openhonest/"
            "honest-code-principles/commits/main")
 EVERY = 24 * 60 * 60          # a day; the text moves in commits, not in minutes
+# After this long with no successful check, the copy stops being unverified and
+# starts being unmonitored. A rate limit clears within the hour. A renamed
+# repository, a deleted one, one made private, a revoked token or a URL that
+# quietly 404s after a reorganisation never clears, and each produces the same
+# message as the rate limit, forever. Without a clock on it, a copy nothing can
+# ever check again reports what a copy checked ninety seconds ago reports.
+UNMONITORED_AFTER = 7 * 24 * 60 * 60
 TIMEOUT = 10
 BEGIN = "<!-- BEGIN VENDORED honest-code-principles.md"
 
@@ -74,11 +93,18 @@ def refresh(now: float) -> dict:
     both read as "no news", which is the reading that makes a stale copy
     invisible.
     """
-    state = {"checked_at": now}
+    # Carries the previous answer forward. Written fresh, one failed check
+    # erased the last known source commit and the date it was learned, so a
+    # single bad minute would throw away the evidence that anything had ever
+    # worked.
+    state = dict(read_cache())
+    state["checked_at"] = now
+    state.pop("error", None)
     try:
         import urllib.request
         with urllib.request.urlopen(API_URL, timeout=TIMEOUT) as r:
             state["source_sha"] = json.load(r)["sha"]
+        state["verified_at"] = now
     except Exception as e:                        # noqa: BLE001
         # Every failure is the same fact here: no answer. Narrowing this to a
         # list of exception types means a type nobody listed escapes to the
@@ -112,11 +138,15 @@ def start_refresh() -> None:
 
 
 def principles_note(skill: Path, now: float | None = None) -> str:
-    """One line when the held principles are behind the source, else "".
+    """One line naming which of the four states this copy is in, or "".
 
     Reads the cache and never the network, so this is free to call on every
     firing. When the cache is stale it starts a refresh and returns what it
     knows now, which may be nothing. The next firing after that has the answer.
+
+    A failed check reports the date of the last successful one rather than a
+    count of days, because a reader can act on "last verified on the 3rd" and
+    cannot act on "stale".
     """
     now = time.time() if now is None else now
     mine = vendored_sha(skill)
@@ -125,12 +155,23 @@ def principles_note(skill: Path, now: float | None = None) -> str:
     state = read_cache()
     if due(state, now):
         start_refresh()
+    verified_at = float(state.get("verified_at") or 0)
+    if state.get("error"):
+        if not verified_at:
+            return ("the Honest Code principles in this skill have never been "
+                    f"checked against their source ({state['error']}). Whether "
+                    f"they are current is unknown.")
+        when = time.strftime("%Y-%m-%d", time.localtime(verified_at))
+        if now - verified_at >= UNMONITORED_AFTER:
+            # A finding rather than a caveat. Nothing here clears on its own.
+            return (f"the Honest Code principles in this skill have not been "
+                    f"verified since {when}. Treat this copy as unmonitored "
+                    f"rather than current: the last error was {state['error']}")
+        return ("the Honest Code principles in this skill could not be checked "
+                f"against their source today ({state['error']}). Last verified "
+                f"on {when}.")
     theirs = state.get("source_sha") or ""
     if not theirs:
-        if state.get("error"):
-            return ("the Honest Code principles in this skill could not be "
-                    f"checked against their source ({state['error']}). They "
-                    f"may be current and that has not been established.")
         return ""                       # first run, refresh already started
     if theirs == mine:
         return ""
