@@ -118,7 +118,13 @@ def recently_written(root: str, window: float) -> tuple[list[str], bool]:
             return found, False
         dirnames[:] = [d for d in dirnames if d not in SKIP and not d.startswith(".")]
         for name in filenames:
-            if Path(name).suffix.lower() not in edit_check.SOURCE:
+            # Markdown as well as code. The wrap rule was wired to Write and
+            # Edit alone, so a session that writes its files through shell
+            # heredocs had never had it applied once. That is most of one
+            # session's markdown, and both of the hard wraps reported on
+            # 2026-08-25 went in that way.
+            if Path(name).suffix.lower() not in (edit_check.SOURCE
+                                                 | edit_check.MARKDOWN):
                 continue
             p = os.path.join(dirpath, name)
             try:
@@ -172,7 +178,11 @@ def main() -> int:
         # told about a file in someone else's working copy, annotated by
         # someone else, that it had never touched.
         defer("edit", path, session, attributed=True)
-        defer("stub", path, session, attributed=True)
+        if Path(path).suffix.lower() not in edit_check.MARKDOWN:
+            # The stub check reads code. Handed prose it finds nothing, and a
+            # check that runs on what it cannot read reports a pass it did not
+            # perform.
+            defer("stub", path, session, attributed=True)
     trace("PostToolUse:bash", "deferred", f"{len(written)} held until they settle",
           files=written)
     return 0                          # silence: the files may still be moving

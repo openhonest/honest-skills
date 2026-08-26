@@ -126,6 +126,7 @@ MAX_CLAUSE_FINDINGS = 5
 
 
 WRAP_MAX = 100          # a prose line shorter than this, with prose under it, is a wrap
+MARKDOWN = {".md", ".markdown"}
 
 
 def hard_wrap_finding(path: str, text: str) -> dict | None:
@@ -663,6 +664,21 @@ def assess(path: str, session: str = "",
         # The file is gone or unreadable. That is not a finding about the
         # code, and a hook that reports it teaches the reader to ignore hooks.
         return None
+    if Path(path).suffix.lower() in MARKDOWN:
+        # Markdown reaches here only from the Bash sweep. Write and Edit answer
+        # for it at the write, before anything is deferred.
+        #
+        # This path existed for code alone until 2026-08-25, when frame
+        # reported hard-wrapping markdown twice on a day the check was live for
+        # Write and Edit. It writes almost every file through a shell heredoc,
+        # under an instruction to prefer the shell, so the rule had never once
+        # been applied to the way that session actually writes. A check wired
+        # to some of the ways a file can be written is not a check on the file.
+        found = hard_wrap_finding(path, text)
+        if not found:
+            return None
+        return (render(path, [found]),
+                hashlib.sha256(text.encode()).hexdigest(), True)
     findings, grade = findings_for(path, text, said)
     # An unresolved finding keeps being reported until it is resolved. It was
     # briefly suppressed after the first telling, on the reasoning that

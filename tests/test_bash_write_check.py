@@ -68,8 +68,30 @@ def test_generated_and_vendored_trees_are_skipped(tmp_path, d):
 
 
 def test_a_file_type_it_does_not_check_is_not_collected(tmp_path):
-    (tmp_path / "notes.md").write_text("hello")
+    (tmp_path / "notes.txt").write_text("hello")
     assert bw.recently_written(str(tmp_path), 120)[0] == []
+
+
+def test_markdown_written_by_a_script_is_collected(tmp_path):
+    """It was not, until 2026-08-25. The wrap rule ran on Write and Edit only,
+    and a session that writes its files through shell heredocs had never had it
+    applied once. This test used to assert the opposite, which is why the gap
+    survived a day of people looking straight at it."""
+    (tmp_path / "notes.md").write_text("hello")
+    assert bw.recently_written(str(tmp_path), 120)[0] == [str(tmp_path / "notes.md")]
+
+
+def test_prose_is_not_handed_to_the_stub_check(tmp_path, monkeypatch):
+    """The stub check reads code. Handed prose it finds nothing, and a check
+    that runs on what it cannot read reports a pass it did not perform."""
+    import pending
+    monkeypatch.setenv("HONEST_PENDING_DIR", str(tmp_path / "pending"))
+    (tmp_path / "notes.md").write_text("hello")
+    run_hook(json.dumps({"tool_name": "Bash", "cwd": str(tmp_path),
+                         "session_id": "prose1"}), monkeypatch)
+    held = [e["path"] for e in pending.entries(pending.read_state("edit", "prose1"))]
+    assert str(tmp_path / "notes.md") in held
+    assert pending.entries(pending.read_state("stub", "prose1")) == []
 
 
 def test_a_build_reports_nothing(tmp_path, monkeypatch):

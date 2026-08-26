@@ -1536,3 +1536,23 @@ def test_a_markdown_file_that_vanished_is_not_a_finding(tmp_path, monkeypatch):
     raw = payload(f)
     f.unlink()
     assert _fire(raw, monkeypatch) == (0, "")
+
+
+# --- markdown reaching the settled path, from the Bash sweep ------------------
+
+def test_a_wrapped_markdown_file_swept_from_bash_is_reported(tmp_path):
+    """Write and Edit answer for markdown at the write. The Bash sweep defers
+    it, so it arrives here instead, and until 2026-08-25 this path read prose
+    as code and found nothing in it."""
+    f = tmp_path / "n.md"
+    f.write_text("A paragraph broken across two\nlines at eighty columns.\n")
+    got = edit_check.assess(str(f), "md-sweep")
+    assert got is not None
+    assert "line break(s) inside a paragraph" in got[0]
+    assert got[2] is True, "a hard wrap is a defect and stays on the nag timer"
+
+
+def test_markdown_with_no_wrap_reaching_the_settled_path_is_silent(tmp_path):
+    f = tmp_path / "n.md"
+    f.write_text("One paragraph on one line, however long it happens to run.\n")
+    assert edit_check.assess(str(f), "md-sweep") is None
