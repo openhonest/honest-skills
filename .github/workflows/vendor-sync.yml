@@ -1,0 +1,70 @@
+# Pull the principles in when the principles repository says they moved.
+#
+# This is the condition that lets the text be vendored at all. A skill holding
+# a copy reads it for free; a skill citing it pays a tool call on every
+# invocation, and the step that costs something is the step that gets skipped.
+# The copy is allowed because it cannot go stale without something acting.
+#
+# THE NOTIFICATION AND THE BACKSTOP ARE BOTH HERE ON PURPOSE
+#
+# `repository_dispatch` is the notification: a push to
+# openhonest/honest-code-principles sends an event here and this runs within
+# seconds. That is the mechanism, and it is the one that will eventually fail
+# quietly. A revoked token, a renamed repository, a workflow disabled after
+# sixty days of inactivity: each leaves the dispatch silently doing nothing
+# while everyone downstream believes the copy is following the source.
+#
+# So the schedule runs anyway, daily, whether or not any dispatch arrived. It
+# is slower and it does not depend on anything upstream being configured
+# correctly. A notification nobody verifies is a claim, and the point of this
+# file is a guarantee.
+name: vendor sync
+
+on:
+  repository_dispatch:
+    types: [principles-updated]
+  schedule:
+    # Daily. The dispatch handles the minutes; this handles the case where the
+    # dispatch stopped arriving and nobody noticed.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: pull the principles in
+        run: python tools/vendor_check.py --sync
+
+      - name: commit only if the text actually moved
+        run: |
+          if git diff --quiet; then
+            echo "already current; nothing to commit"
+            exit 0
+          fi
+          # The recorded commit, read back out of the file the sync just
+          # wrote. Fetching it a second time could disagree with what was
+          # written if the source moved in between, and the commit message
+          # would then name a version this repository does not hold.
+          sha=$(grep -o 'BEGIN VENDORED honest-code-principles.md @ [0-9a-f]*' \
+                skills/honest-code/SKILL.md | awk '{print $NF}' | cut -c1-7)
+          git config user.name "openhonest-bot"
+          git config user.email "noreply@openhonest.org"
+          git add -A
+          git commit -m "Vendor the principles at $sha"
+          git push
+
+      - name: the copy must match before this job claims success
+        # Re-checked after the commit rather than trusting the sync. A sync
+        # that wrote nothing and a sync that wrote the wrong thing both leave
+        # this job green otherwise, which is the failure the whole arrangement
+        # exists to prevent.
+        run: python tools/vendor_check.py

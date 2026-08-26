@@ -394,6 +394,38 @@ def unreadable(source: str, error: str) -> dict:
             "counts": {}, "measures": {}, "checks": {}}
 
 
+VENDOR_BEGIN = "<!-- BEGIN VENDORED"
+VENDOR_END = "<!-- END VENDORED -->"
+
+
+def without_quoted(text: str) -> str:
+    """The file with any vendored block removed.
+
+    A vendored block is somebody else's document, held here so a reader does
+    not have to fetch it. Scoring it would report its author's sentence length
+    and its author's punctuation as this file's, and the only way to make the
+    score pass would be to edit the quotation, which is the one thing a
+    vendored copy may never do: it has to match its source byte for byte or the
+    push is refused.
+
+    So it is cut before measuring, and the reader is told, because a
+    measurement that quietly skips part of its input is the defect this whole
+    project is about. The lines are replaced rather than deleted, so every line
+    number this tool reports still points at the right line of the real file.
+    """
+    out, skipping = [], False
+    for line in text.split("\n"):
+        if VENDOR_BEGIN in line:
+            skipping = True
+        if skipping:
+            out.append("")
+            if VENDOR_END in line:
+                skipping = False
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
 def analyse_paths(paths: list[str], stdin_text: str | None) -> dict:
     """Measure every path given, or stdin when none is.
 
@@ -411,7 +443,17 @@ def analyse_paths(paths: list[str], stdin_text: str | None) -> dict:
         files = []
         for path in paths:
             text, error = read_one(path)
-            files.append(unreadable(path, error) if error else analyse(text, path))
+            if error:
+                files.append(unreadable(path, error))
+                continue
+            quoted = VENDOR_BEGIN in text
+            got = analyse(without_quoted(text) if quoted else text, path)
+            if quoted:
+                # Named, not silent. A tool that drops part of its input and
+                # says nothing has reported a score for a document it did not
+                # read.
+                got["quoted_block_skipped"] = True
+            files.append(got)
     # Worst result wins: unreadable beats out-of-band beats clean. A run that
     # could not read half its input has not passed.
     worst = max(f["exit"] for f in files)

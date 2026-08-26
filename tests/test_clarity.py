@@ -760,3 +760,76 @@ def test_a_failing_draft_carries_it_too():
     is read for what to fix and would otherwise imply the list is complete."""
     out = clarity.render_text(clarity.analyse("Clearly a very significant change.", "-"))
     assert out.startswith("NOT MEASURED")
+
+
+# --- a quoted document is not this file's writing ----------------------------
+
+VENDORED = """# A skill
+
+This skill holds a document written by somebody else, so that a reader does not have to go and fetch it before the rules make sense. The prose in this paragraph belongs to the skill and is measured. The block below does not.
+
+<!-- BEGIN VENDORED honest-code-principles.md @ a449b58 -->
+## Their Heading
+Their prose \u2014 with a stray dash, and a load-bearing tell.
+
+## Another Heading
+More of their prose, running past twenty words so that it would register as a long sentence if this tool were reading it at all.
+<!-- END VENDORED -->
+
+A closing sentence of the skill's own writing, long enough to be scored properly rather than dismissed as too abrupt to measure.
+"""
+
+
+def test_a_vendored_block_is_not_scored_as_this_file_s_prose(tmp_path):
+    """The block has to match its source byte for byte or the push is refused,
+    so the only way to make its score pass would be to edit the quotation. The
+    author of the file cannot act on the finding, which makes reporting it
+    noise."""
+    f = tmp_path / "SKILL.md"; f.write_text(VENDORED)
+    run = clarity.analyse_paths([str(f)], None)
+    got = run["files"][0]
+    assert got["exit"] == 0
+    assert got["quoted_block_skipped"] is True
+
+
+def test_skipping_a_quoted_block_is_reported_not_silent(tmp_path):
+    """A tool that drops part of its input and says nothing has reported a
+    score for a document it did not read."""
+    f = tmp_path / "SKILL.md"; f.write_text(VENDORED)
+    assert "quoted_block_skipped" in clarity.analyse_paths([str(f)], None)["files"][0]
+
+
+def test_a_file_with_no_quoted_block_is_not_marked(tmp_path):
+    f = tmp_path / "plain.md"; f.write_text("One sentence, on one line.\n")
+    assert "quoted_block_skipped" not in clarity.analyse_paths([str(f)], None)["files"][0]
+
+
+def test_the_skill_s_own_prose_is_still_scored(tmp_path):
+    """Cutting the quotation must not cut the check. A file whose own writing
+    breaks the rules still fails, quoted block or not."""
+    bad = VENDORED.replace(
+        "A closing sentence of the skill's own writing, long enough to be "
+        "scored properly rather than dismissed as too abrupt to measure.",
+        "This closing sentence is the author's own and it carries a stray "
+        "dash \u2014 right here, which the tool must still refuse.")
+    f = tmp_path / "SKILL.md"; f.write_text(bad)
+    got = clarity.analyse_paths([str(f)], None)["files"][0]
+    assert got["exit"] == 1
+
+
+def test_line_numbers_still_point_at_the_real_file(tmp_path):
+    """The quoted lines are blanked rather than removed, so everything after
+    the block keeps its true line number. Deleted, every later finding would
+    name a line the reader cannot find."""
+    text = clarity.without_quoted(VENDORED)
+    assert len(text.split("\n")) == len(VENDORED.split("\n"))
+    assert "Their prose" not in text
+    assert "A closing sentence" in text
+
+
+def test_an_unterminated_quoted_block_skips_to_the_end(tmp_path):
+    """Rather than resuming mid-quotation and scoring half of someone else's
+    document. The vendor gate refuses to push an unpaired block, so this state
+    is transient, and while it lasts silence beats a wrong number."""
+    text = clarity.without_quoted("mine\n<!-- BEGIN VENDORED x @ a -->\ntheirs\nmore\n")
+    assert "theirs" not in text and "more" not in text and "mine" in text

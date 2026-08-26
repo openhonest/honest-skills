@@ -72,7 +72,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pending import (defer, drop, entries, read_state,  # noqa: E402
                      session_key, stranded, write_state)
+from freshness import principles_note  # noqa: E402
 from trace_hook import note_session, stale_note, trace  # noqa: E402
+
+# The vendored principles, beside this file in the installed plugin. Resolved
+# from __file__ rather than from the working directory, because a hook runs
+# wherever the session happens to be.
+SKILL_FILE = Path(__file__).resolve().parent.parent / "skills/honest-code/SKILL.md"
 
 # L1.17 at file scope. The published band is a percentage of files in a
 # repository, which is meaningless for one file. The question underneath it,
@@ -591,9 +597,9 @@ def render(path: str, findings: list[dict]) -> str:
     # smaller lie than over-reporting it and it is still a lie.
     not_run = sum(1 for f in findings if f["verdict"] == "NOT_RUN")
     lines = [f"honest-code: {CHECKS - not_run} of {CHECKS} checks ran on {name}"]
-    note = stale_note()
-    if note:
-        lines.append(f"  {note}")
+    for note in (stale_note(), principles_note(SKILL_FILE)):
+        if note:
+            lines.append(f"  {note}")
     for f in findings:
         lines.append(f"  {f['verdict']}  {f['indicator']}  {f['detail']}")
         lines.append(f"      {f['action']}")

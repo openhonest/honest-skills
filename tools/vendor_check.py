@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""Refuse a push whose vendored copy differs from the source it came from.
+
+Vendoring is allowed here on one condition: no push may carry a stale copy.
+This is what makes that true rather than intended.
+
+The alternative was for the skill to cite the principles and read them at
+invocation. That costs a tool call every time the skill loads, and a step that
+costs something is the step that gets skipped under pressure. Holding the text
+is faster to read and free to drift. The drift is the measured problem: the
+principles lived in twelve places holding twenty-two versions between them, and
+no copy held them all. Four were missing from the folder the framework itself
+called canonical, and one numbering scheme resolved a citation of P14 to
+different principles depending on which file the reader had open.
+
+So the copy stays and the drift is made impossible to push. A copy that cannot
+survive a push while stale is a cache, and a cache with a hard invalidation is
+not the thing that went wrong twelve times.
+
+Verified against the remote, not against a local clone. A local clone is itself
+a copy and can be as stale as the one under test, which would check a copy
+against a copy and pass. A push is already a network operation: anything able to
+push is able to fetch.
+
+Failure to verify fails the push. Not being able to check is not evidence of
+being current, and a check that passes when it could not run is the silent
+failure this project exists to name.
+
+What this covers, and what it does not.
+
+It gates pushes of this repository, so no release can be cut carrying a stale
+copy. It does not follow the source after a release. Someone who installs the
+plugin holds a snapshot, and the source can move the next day.
+
+That boundary is why each block records the commit it was taken from, in the
+file, where a reader sees it. Anyone can run this against their own install and
+be told the answer:
+
+    uv run tools/vendor_check.py --root ~/.claude/plugins/cache/<marketplace>/<plugin>/<version>
+
+    uv run tools/vendor_check.py            # verify, exit 1 on drift
+    uv run tools/vendor_check.py --sync     # pull the source in and record it
+"""
+import argparse
+import re
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+SOURCE_URL = ("https://raw.githubusercontent.com/openhonest/"
+              "honest-code-principles/main/honest-code-principles.md")
+API_URL = ("https://api.github.com/repos/openhonest/"
+           "honest-code-principles/commits/main")
+BEGIN = "<!-- BEGIN VENDORED honest-code-principles.md"
+END = "<!-- END VENDORED -->"
+TIMEOUT = 20
+
+
+def vendoring_files(root: Path) -> list[Path]:
+    """Every file holding a vendored block, found by reading them.
+
+    Listed by search rather than by a hand-kept list. A list is a third copy of
+    the same fact, and it goes stale the first time someone vendors into a file
+    nobody remembered to add.
+    """
+    found = []
+    for p in sorted(root.rglob("*.md")):
+        if ".git/" in str(p):
+            continue
+        try:
+            if BEGIN in p.read_text(errors="replace"):
+                found.append(p)
+        except OSError:
+            continue
+    return found
+
+
+def block_of(text: str) -> tuple[str, str] | None:
+    """The vendored body and the commit it was taken from, or None.
+
+    Returns None when the markers are absent or unpaired. A half-marked block
+    is not read as an empty one: an unterminated BEGIN would otherwise compare
+    the rest of the file and report drift nobody can act on.
+    """
+    m = re.search(re.escape(BEGIN) + r"\s+@\s+([0-9a-f]{7,40})\s*-->\n"
+                  + r"(.*?)\n" + re.escape(END), text, re.S)
+    return (m.group(2), m.group(1)) if m else None
+
+
+def fetch(url: str) -> str:
+    with urllib.request.urlopen(url, timeout=TIMEOUT) as r:
+        return r.read().decode()
+
+
+def source_now() -> tuple[str, str]:
+    """The canonical text and the commit it is at, from the remote."""
+    import json
+    head = json.loads(fetch(API_URL))["sha"]
+    return fetch(SOURCE_URL).rstrip("\n"), head
+
+
+def sync(files: list[Path], body: str, sha: str) -> list[Path]:
+    changed = []
+    for p in files:
+        text = p.read_text()
+        found = block_of(text)
+        if found is None:
+            continue
+        old_body, old_sha = found
+        if old_body == body and old_sha == sha:
+            continue
+        new = re.sub(re.escape(BEGIN) + r"\s+@\s+[0-9a-f]{7,40}\s*-->\n"
+                     + r".*?\n" + re.escape(END),
+                     f"{BEGIN} @ {sha} -->\n{body}\n{END}", text, count=1,
+                     flags=re.S)
+        p.write_text(new)
+        changed.append(p)
+    return changed
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--sync", action="store_true",
+                    help="rewrite each vendored block from the source")
+    ap.add_argument("--root", type=Path, default=Path(__file__).resolve().parent.parent)
+    a = ap.parse_args()
+
+    files = vendoring_files(a.root)
+    if not files:
+        print("no vendored blocks found; nothing to keep fresh")
+        return 0
+
+    try:
+        body, sha = source_now()
+    except (urllib.error.URLError, OSError, ValueError, KeyError) as e:
+        # Not being able to check is not evidence of being current.
+        print(f"cannot reach the principles source to verify it: {e}\n"
+              f"  {SOURCE_URL}\n"
+              f"  The push is refused because the copy could not be checked, "
+              f"not because it is known to be stale.", file=sys.stderr)
+        return 1
+
+    if a.sync:
+        changed = sync(files, body, sha)
+        for p in changed:
+            print(f"  refreshed {p.relative_to(a.root)} to {sha[:7]}")
+        print(f"{len(changed)} file(s) refreshed" if changed
+              else f"already at {sha[:7]}")
+        return 0
+
+    stale = []
+    for p in files:
+        found = block_of(p.read_text())
+        if found is None:
+            print(f"{p.relative_to(a.root)}: a BEGIN marker with no matching "
+                  f"END. The block cannot be compared.", file=sys.stderr)
+            return 1
+        old_body, old_sha = found
+        if old_body != body or old_sha != sha:
+            stale.append((p, old_sha))
+    if not stale:
+        print(f"vendored copies match the source at {sha[:7]}")
+        return 0
+
+    for p, old_sha in stale:
+        print(f"{p.relative_to(a.root)}: vendored at {old_sha[:7]}, "
+              f"source is at {sha[:7]}", file=sys.stderr)
+    print(f"\nRun `uv run tools/vendor_check.py --sync` and commit the result.",
+          file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

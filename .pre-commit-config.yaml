@@ -13,3 +13,15 @@ repos:
         entry: tools/commit_msg.py
         language: script
         stages: [commit-msg]
+      # Vendoring the principles into a skill is allowed on one condition: no
+      # push may carry a stale copy. This is the condition, not a reminder of
+      # it. Declared here rather than dropped into .git/hooks so that a
+      # contributor gets it from `pre-commit install --hook-type pre-push`
+      # rather than from having been told.
+      - id: honest-vendor-fresh
+        name: vendored principles match the source
+        entry: tools/vendor_check.py
+        language: script
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
