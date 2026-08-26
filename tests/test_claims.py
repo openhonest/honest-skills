@@ -173,13 +173,3 @@ def test_ordinary_prose_about_safety_is_not_a_claim(text, tmp_path):
     f = tmp_path / "d.md"; f.write_text(text + "\n")
     got = claims.analyse_paths([str(f)], None)["files"][0]
     assert not any(c["kind"] == "safety" for c in got["findings"]), text
-
-
-def test_every_kind_the_docstring_names_has_a_pattern():
-    """The defect itself, held apart from the table so that adding a kind to
-    the prose without adding it to the code fails here. A catalogue listing
-    rules nothing enforces is the shape frame spent a day on, and this one was
-    inside the tool that checks claims."""
-    named = {"unqualified negative", "completion", "absolute", "safety"}
-    assert named <= set(claims.CLAIMS), \
-        f"named in the docstring, absent from CLAIMS: {named - set(claims.CLAIMS)}"

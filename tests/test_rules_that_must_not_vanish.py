@@ -203,3 +203,23 @@ def test_the_vendor_gate_is_backed_by_something_other_than_the_local_hook():
     workflow = (root / ".github/workflows/vendor-sync.yml").read_text()
     assert "vendor_check.py" in workflow.replace("--sync", ""), \
         "nothing but the local pre-push hook now checks the vendored copy"
+
+
+def test_every_claim_kind_the_docstring_names_has_a_pattern():
+    """The docstring listed four claim kinds and the table held three, so
+    "It is safe to change the config format now" exited zero. It survived
+    because every test was written from the table, and a test written from the
+    table cannot see a gap in the table.
+
+    Held here rather than beside CLAIMS for the reason this file exists: a test
+    living next to the thing it guards is deleted in the same edit as the thing
+    it guards. Adding a kind to the prose without adding it to the code fails
+    here, in a file nobody editing the patterns would naturally open."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "claims", Path(__file__).resolve().parent.parent / "tools/claims.py")
+    claims = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(claims)
+    named = {"unqualified negative", "completion", "absolute", "safety"}
+    assert named <= set(claims.CLAIMS), \
+        f"named in the docstring, absent from CLAIMS: {named - set(claims.CLAIMS)}"
