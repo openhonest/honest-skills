@@ -129,3 +129,57 @@ def test_unterminated_frontmatter_is_not_treated_as_metadata(tmp_path):
     code, out = run("---\ndescription: x\n\nTests pass.", tmp_path)
     assert code == 1
     assert "completion" in out
+
+
+# --- the fourth kind, which the docstring named and nothing checked -----------
+
+@pytest.mark.parametrize("text", [
+    "It is safe to change the config format now.",
+    "This refactor is safe.",
+    "No risk in removing the shim.",
+    "This change is backwards compatible.",
+    "Removing it won't break anything downstream.",
+    "Nothing depends on that module any more.",
+])
+def test_a_safety_claim_with_no_warrant_is_flagged(text, tmp_path):
+    """The docstring named four claim kinds and the table held three. Every
+    test written from the table passed, which is why it survived: the doc was
+    right and the code was short, and only a test written from the doc could
+    tell. studio found it that way.
+
+    Kept rather than trimmed away, because a safety claim is what precedes a
+    breaking change and is the one kind whose reader acts on it immediately by
+    not looking for themselves."""
+    f = tmp_path / "d.md"; f.write_text(text + "\n")
+    got = claims.analyse_paths([str(f)], None)["files"][0]
+    assert any(c["kind"] == "safety" for c in got["findings"]), text
+
+
+def test_a_safety_claim_with_a_warrant_beside_it_passes(tmp_path):
+    f = tmp_path / "d.md"
+    f.write_text("It is safe to remove the shim: `grep -rn \"shim(\" src/` "
+                 "returns no callers.\n")
+    assert claims.analyse_paths([str(f)], None)["files"][0]["findings"] == []
+
+
+@pytest.mark.parametrize("text", [
+    "The type system is thread-safe by construction.",
+    "This is safety-relevant software.",
+    "Run it in a safe directory.",
+])
+def test_ordinary_prose_about_safety_is_not_a_claim(text, tmp_path):
+    """A checker that fires on the word rather than the assertion gets turned
+    off, and then the rule is gone by a different route."""
+    f = tmp_path / "d.md"; f.write_text(text + "\n")
+    got = claims.analyse_paths([str(f)], None)["files"][0]
+    assert not any(c["kind"] == "safety" for c in got["findings"]), text
+
+
+def test_every_kind_the_docstring_names_has_a_pattern():
+    """The defect itself, held apart from the table so that adding a kind to
+    the prose without adding it to the code fails here. A catalogue listing
+    rules nothing enforces is the shape frame spent a day on, and this one was
+    inside the tool that checks claims."""
+    named = {"unqualified negative", "completion", "absolute", "safety"}
+    assert named <= set(claims.CLAIMS), \
+        f"named in the docstring, absent from CLAIMS: {named - set(claims.CLAIMS)}"

@@ -60,6 +60,25 @@ CLAIMS = {
         ),
         "show the command or its output",
     ),
+    "safety": (
+        # The fourth kind the docstring has always named and nothing checked.
+        # studio found it while writing tests against the documented list
+        # rather than against the code, which is the only way it surfaces: the
+        # doc is right, the table was short, and every test written from the
+        # table passed.
+        #
+        # This one is worth having rather than trimming away. A safety claim is
+        # what precedes a breaking change, and it is the only one of the four
+        # whose reader acts on it immediately by not looking themselves.
+        re.compile(
+            r"\b(?:safe to (?:change|remove|delete|drop|rename|refactor|"
+            r"upgrade|migrate|merge|land|deploy)|is safe|are safe|no risk|"
+            r"without risk|backwards?[- ]compatible|won'?t break|"
+            r"will not break|nothing depends on|breaks? nothing)\b",
+            re.I,
+        ),
+        "name what you checked to know that",
+    ),
     "absolute": (
         re.compile(
             r"\b(?:every (?:file|module|caller|agent|user|request|test)|"
