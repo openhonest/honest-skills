@@ -583,7 +583,51 @@ def findings_for(path: str, text: str,
              if f is not None], grade)
 
 
-def advisories() -> list[str]:
+# An advisory broken this long has stopped degrading gracefully and started
+# being a dead component wearing graceful degradation as a disguise. Shorter
+# than the freshness threshold because these run many times a day rather than
+# once, so a day of them is hundreds of failures rather than one missed poll.
+ADVISORY_BROKEN_AFTER = 24 * 60 * 60
+
+
+def advisory_health(name: str, ok: bool, now: float) -> float:
+    """Record whether an advisory worked, and return how long it has been down.
+
+    Returns 0.0 while it is working. A run of failures is timed from the first
+    of them rather than counted, for the reason the freshness check is: a count
+    only rises while something is running often enough to fail, and the age
+    answers the question a reader has.
+
+    Kept beside the other hook state rather than in the plugin directory, which
+    is named for a version and replaced on update.
+    """
+    base = os.environ.get("HONEST_PENDING_DIR") or os.path.expanduser("~/.claude")
+    f = Path(base) / "honest-advisory-health.json"
+    try:
+        book = json.loads(f.read_text())
+        book = book if isinstance(book, dict) else {}
+    except (OSError, ValueError):
+        book = {}
+    entry = book.get(name) if isinstance(book.get(name), dict) else {}
+    if ok:
+        entry = {"ok_at": now}
+        down = 0.0
+    else:
+        entry.setdefault("since", now)
+        down = now - float(entry["since"])
+    book[name] = entry
+    try:
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(book))
+    except OSError:
+        # The health record failing cannot be allowed to break the thing whose
+        # health it records. Reported as working, which errs toward silence
+        # rather than toward a warning nobody can act on.
+        return 0.0
+    return down
+
+
+def advisories(now: float | None = None) -> list[str]:
     """The version and freshness notes, and never an exception.
 
     These are advice about the tooling. The findings beside them are the
@@ -601,6 +645,7 @@ def advisories() -> list[str]:
     turn is worse. The trace is where it can be counted without costing anyone
     a turn.
     """
+    now = time.time() if now is None else now
     out = []
     for name, get in (("stale_note", stale_note),
                       ("principles_note", lambda: principles_note(SKILL_FILE))):
@@ -608,7 +653,20 @@ def advisories() -> list[str]:
             note = get()
         except Exception as e:                    # noqa: BLE001
             trace("advisory", "fired", f"{name} raised: {type(e).__name__}: {e}")
+            down = advisory_health(name, False, now)
+            if down >= ADVISORY_BROKEN_AFTER:
+                # Past here it is not an advisory degrading gracefully. A fault
+                # swallowed once and traced is handled; swallowed on every run
+                # for a day and traced every time is a module that has been
+                # dead since Tuesday with nothing saying so.
+                since = time.strftime("%Y-%m-%d",
+                                      time.localtime(now - down))
+                out.append(f"the {name.replace('_', ' ')} check has been "
+                           f"failing since {since} and this hook has been "
+                           f"hiding the fault. Its last error: "
+                           f"{type(e).__name__}: {e}")
             continue
+        advisory_health(name, True, now)
         if note:
             out.append(note)
     return out

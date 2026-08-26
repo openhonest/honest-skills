@@ -140,3 +140,66 @@ def test_a_broken_advisory_is_recorded_rather_than_swallowed(monkeypatch, tmp_pa
     rows = [__import__("json").loads(l) for l in log.read_text().splitlines()]
     assert any(r["event"] == "advisory" and "principles_note raised" in r["why"]
                for r in rows)
+
+
+def test_an_advisory_broken_for_a_day_stops_being_hidden(monkeypatch, tmp_path):
+    """Swallowing a fault once and tracing it is handling it. Swallowing it on
+    every run for a day and tracing it every time is a module that has been
+    dead since Tuesday with nothing saying so.
+
+    A swallowed-and-traced fault looks identical whether it happened once or
+    four hundred times, and only one of those is fine. Timed from the first
+    failure rather than counted, because a count only rises while something is
+    running often enough to fail."""
+    edit_check = load("edit_check")
+    monkeypatch.setenv("HONEST_PENDING_DIR", str(tmp_path))
+    monkeypatch.setattr(edit_check, "stale_note", lambda: "")
+    monkeypatch.setattr(edit_check, "principles_note",
+                        lambda *a: (_ for _ in ()).throw(RuntimeError("dead")))
+    now = 1_000_000.0
+    assert edit_check.advisories(now) == [], "one failure is not a broken module"
+    assert edit_check.advisories(now + 3600) == []
+    late = edit_check.advisories(now + edit_check.ADVISORY_BROKEN_AFTER + 1)
+    assert late and "has been failing since" in late[0]
+    assert "hiding the fault" in late[0]
+
+
+def test_a_recovered_advisory_clears_its_clock(monkeypatch, tmp_path):
+    """Otherwise the hook reports a fault it has already recovered from, and a
+    reader learns to skip the line."""
+    edit_check = load("edit_check")
+    monkeypatch.setenv("HONEST_PENDING_DIR", str(tmp_path))
+    monkeypatch.setattr(edit_check, "stale_note", lambda: "")
+    now = 2_000_000.0
+    monkeypatch.setattr(edit_check, "principles_note",
+                        lambda *a: (_ for _ in ()).throw(RuntimeError("dead")))
+    edit_check.advisories(now)
+    monkeypatch.setattr(edit_check, "principles_note", lambda *a: "")
+    edit_check.advisories(now + edit_check.ADVISORY_BROKEN_AFTER + 1)
+    monkeypatch.setattr(edit_check, "principles_note",
+                        lambda *a: (_ for _ in ()).throw(RuntimeError("again")))
+    assert edit_check.advisories(now + edit_check.ADVISORY_BROKEN_AFTER + 2) == []
+
+
+def test_the_health_record_failing_does_not_break_the_hook(monkeypatch, tmp_path):
+    """The record of whether a thing works cannot be allowed to break the thing."""
+    edit_check = load("edit_check")
+    monkeypatch.setenv("HONEST_PENDING_DIR", str(tmp_path / "nope"))
+    monkeypatch.setattr(edit_check.Path, "write_text",
+                        lambda self, *a, **k: (_ for _ in ()).throw(OSError("ro")))
+    assert edit_check.advisory_health("x", False, 1.0) == 0.0
+
+
+def test_the_vendor_gate_is_backed_by_something_other_than_the_local_hook():
+    """This passed by accident. The daily sync job runs vendor_check for its
+    own reasons, which happens to mean deleting .git/hooks/pre-push is caught
+    within a day rather than never.
+
+    A property nobody intended is a property nothing preserves: the next person
+    to touch that job has no reason to know it is holding up something else.
+    Written down here so that removing it fails a test instead of quietly
+    removing a gate."""
+    root = Path(__file__).resolve().parent.parent
+    workflow = (root / ".github/workflows/vendor-sync.yml").read_text()
+    assert "vendor_check.py" in workflow.replace("--sync", ""), \
+        "nothing but the local pre-push hook now checks the vendored copy"
