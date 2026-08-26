@@ -42,6 +42,7 @@ be told the answer:
     uv run tools/vendor_check.py --sync     # pull the source in and record it
 """
 import argparse
+import os
 import re
 import sys
 import urllib.error
@@ -89,7 +90,24 @@ def block_of(text: str) -> tuple[str, str] | None:
 
 
 def fetch(url: str) -> str:
-    with urllib.request.urlopen(url, timeout=TIMEOUT) as r:
+    """Read a URL, authenticated when a token is in the environment.
+
+    Unauthenticated GitHub allows sixty requests an hour per address, and this
+    makes two per check. That is ample for a person and thin for CI, where
+    several jobs share one runner address: the checks then fail as
+    could-not-verify, which is the right answer and the wrong reason. Actions
+    always sets GITHUB_TOKEN, which lifts the limit to a thousand, so the place
+    that needs the headroom already has it and nothing has to be configured.
+
+    Anonymous when no token is set. A public file needs no credentials, and
+    demanding one to check a public document would put a secret in the path of
+    a rule anyone should be able to verify.
+    """
+    req = urllib.request.Request(url)
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        req.add_header("Authorization", f"Bearer {token}")
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
         return r.read().decode()
 
 

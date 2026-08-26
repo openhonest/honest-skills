@@ -60,7 +60,7 @@ https://github.com/openhonest/honest-code-principles if you want to confirm it
 yourself. A released copy is a snapshot: the source can move the day after a
 release, and the recorded commit is how you tell.
 
-<!-- BEGIN VENDORED honest-code-principles.md @ a449b58eb39d7becf1f034224915f1132eee473c -->
+<!-- BEGIN VENDORED honest-code-principles.md @ 5a0ce96d009615ce328dc02bbc968f42772b9098 -->
 # Honest Code: Coding Principles
 
 Every principle names a category of defect and removes it. A practice that does not eliminate a named category of bug is a style preference, and does not belong here.
@@ -79,7 +79,7 @@ Public methods in classes are an open door to promiscuous state mutation that cr
 
 A method like `user.validate()` that mutates internal state becomes `validate_user(user: dict) -> dict`. Input in, output out. The function has no access to `self` because there is no `self`. No side effects, no surprises.
 
-A `class User` with fields, methods, getters, setters, and lifecycle hooks becomes `User = TypedDict("User", {"email": str, "name": str})`. The data is just data — no behavior attached. If you can't `json.dumps()` it, it's too clever by half.
+A `class User` with fields, methods, getters, setters, and lifecycle hooks becomes `User = TypedDict("User", {"email": str, "name": str})`. The data is just data, with no behaviour attached. If you can't `json.dumps()` it, it's too clever by half.
 
 Java and C# do not allow standalone functions. Honest Code is still writable in them by wrapping the function in a class exposing a single public method, which is the language's syntax for a function and not a return to objects.
 
@@ -114,7 +114,7 @@ Instead of `addEventListener`, `querySelector` and `innerHTML` in JavaScript, de
 **Partly enforced** by honest-check's JavaScript rules, HC-P011 and the imperative-DOM checks. A hand-written listener is caught; whether a declaration would have served better is a reading, not a check.
 
 ## References Resolve Statically
-Every identifier a rendered artifact names is a reference across a boundary: an `hx-get` to a route, a `class` to a stylesheet rule, a `{% include %}` to a template. Asserting the artifact contains the string proves it was written, not that it resolves — two green tests can describe a button and a menu that never connect.
+Every identifier a rendered artifact names is a reference across a boundary: an `hx-get` to a route, a `class` to a stylesheet rule, a `{% include %}` to a template. Asserting the artifact contains the string proves it was written, not that it resolves: two green tests can describe a button and a menu that never connect.
 
 Resolve every emitted reference to its definition at the gate, not in a running browser, and generate agreeing artifacts from one declaration so they cannot disagree.
 
@@ -137,14 +137,14 @@ Before adding a cache, profile the query. A single SQL join with proper indexes 
 ## Pure Function Assertions Over Mocks
 A mock makes a test agree with itself. It replaces the thing under test with a description of what you already believe, so the test passes when the belief matches the code and keeps passing when belief and code are wrong together. A suite built on mocks tells you the code still does what it did, never that it does what it should.
 
-`assert f(input) == expected_output` — that's the whole test. If you need 9 mocks to test a function, the function has 9 hidden dependencies. Extract the pure logic; test it directly. Test the wiring separately with integration tests that hit real services. NO MOCKS.
+`assert f(input) == expected_output`. That is the whole test. If you need 9 mocks to test a function, the function has 9 hidden dependencies. Extract the pure logic; test it directly. Test the wiring separately with integration tests that hit real services. NO MOCKS.
 
 **Enforced by** honest-test, which refuses a monkeypatch, a `mock.patch` or a runtime rebinding in a test body at collection time. honest-check catalogues HC-P012 for the same rule and does not emit it, so the static half is documented and absent.
 
 ## Type Declarations Over Imperative Validation
 A hand-written check is a copy of a constraint that already exists elsewhere. The column is `varchar(255)`, the field is typed, the form says `type="email"`, and then a function checks all three again in its own words. Copies drift, and the copy that drifts is the one on the path nobody exercised.
 
-Instead of writing `if not isinstance(x, str)`, `if len(x) > 255`, `if not re.match(...)` — declare a schema in your language's validation layer, a TypedDict, a SQL column constraint, or an `<input type="email">`. The runtime, type checker, database, or browser enforces the constraint. The programmer declares it; the machinery enforces it.
+Instead of writing `if not isinstance(x, str)`, `if len(x) > 255`, `if not re.match(...)`, declare a schema in your language's validation layer, a TypedDict, a SQL column constraint, or an `<input type="email">`. The runtime, type checker, database, or browser enforces the constraint. The programmer declares it; the machinery enforces it.
 
 **Enforced by** honest-check HC-P005, statically, at the gate.
 
@@ -156,7 +156,7 @@ Instead of `self._connection = await connect()` stored on a class, use `async wi
 **Enforced by** honest-check HC-P007, statically, at the gate.
 
 ## Configuration as Parameters
-Configuration set in a constructor is a dependency the signature does not mention. A reader cannot see what a function needs, a caller cannot supply it, and the order things are constructed in becomes load-bearing, so the program works or fails on a sequence nobody wrote down.
+Configuration set in a constructor is a dependency the signature does not mention. A reader cannot see what a function needs, a caller cannot supply it, and the order things are constructed in decides whether the program works, on a sequence nobody wrote down.
 
 Instead of `self._config` set in `__init__`, pass `config: dict` as an argument to each function that needs it. The dependency is visible in the signature. No hidden state, no initialization order bugs.
 
@@ -179,9 +179,9 @@ Then record what missed. An unknown key is not the caller's mistake, it is a gap
 **Partly enforced** by honest-check HC-P018 for an unbounded call target and HC-P013 for an unbounded routing key. The other half, a lookup read with a default instead of by subscript, is not checked by anything.
 
 ## Atomic Test-and-Set Over Check-Then-Act
-A guard that reads a shared value and then writes it is not a guard. Between the read and the write another caller reads the same answer, and both proceed believing they hold the thing exclusively. Under real threads this is rare enough to be unreproducible from a bug report; under an async runtime it is not rare at all — any await between the two, a log line or a metric or any I/O, makes the race certain rather than occasional, and the code that does it looks completely ordinary.
+A guard that reads a shared value and then writes it is not a guard. Between the read and the write another caller reads the same answer, and both proceed believing they hold the thing exclusively. Under real threads this is rare enough to be unreproducible from a bug report; under an async runtime it is not rare at all: any await between the two, a log line or a metric or any I/O, makes the race certain rather than occasional, and the code that does it looks completely ordinary.
 
-Express the guard as one operation whose return value distinguishes "I took it" from "someone else holds it": an atomic insert, a compare-and-swap, an insert-if-absent. The token written must be unique to the caller, because a shared sentinel is not a fix — every later caller reads it back, matches it, and reports success. The bug category this eliminates is a guard that reports protection while protecting nothing.
+Express the guard as one operation whose return value distinguishes "I took it" from "someone else holds it": an atomic insert, a compare-and-swap, an insert-if-absent. The token written must be unique to the caller, because a shared sentinel is not a fix, because every later caller reads it back, matches it, and reports success. The bug category this eliminates is a guard that reports protection while protecting nothing.
 
 **Nothing enforces this.** No rule exists. A read followed by a write passes every gate here, and the race it admits is the kind that reproduces rarely enough to be argued away.
 
@@ -193,7 +193,7 @@ Two rules follow. **An error is returned, never written**: a function that logs 
 **Partly enforced** by honest-check HC-P004, whose I/O list names the logging calls that emit. That catches information written from the interior. The other half, an error written instead of returned, is not checked by anything.
 
 ## Constrain AI with Data Shape Contracts
-**This one mitigates. It does not eliminate, and it is the only entry here that does not.** Instead of "write a notification system", say: write a function taking `{channel, recipient, message}` and returning `{status}`. A defined input and output contract is verifiable by reading the signature and running one example, where a class with five methods requires tracing every call sequence. That lowers the cost of finding a fault; it makes no category of fault impossible. It is kept because it works, and marked because everything else in this document promises removal.
+**This one mitigates. It does not eliminate, and it is the only entry here that does not.** Instead of "write a notification system," say: write a function taking `{channel, recipient, message}` and returning `{status}`. A defined input and output contract is verifiable by reading the signature and running one example, where a class with five methods requires tracing every call sequence. That lowers the cost of finding a fault; it makes no category of fault impossible. It is kept because it works, and marked because everything else in this document promises removal.
 
 **Nothing enforces this, and nothing could.** It is guidance for phrasing a request to a model, which is why it is also the one entry that mitigates rather than removes.
 
@@ -207,7 +207,7 @@ Every function carries exactly one gherkin scenario naming it. The rule is a bij
 ## Declarative Equivalents Over Framework Lifecycle Hooks
 Lifecycle hooks are an initialisation order you cannot see. `componentDidMount`, `useEffect` cleanup and `ngOnInit` each run at a moment the framework picks, so the sequence lives in the framework's documentation instead of your file, and two hooks that must happen in an order have no way to say so.
 
-Instead of `componentDidMount`, `useEffect` cleanup, `ngOnInit` — use HTMX attributes that declare when to load (`hx-trigger="load"`), or server-rendered HTML that arrives ready. No client-side initialization sequence.
+Instead of `componentDidMount`, `useEffect` cleanup, `ngOnInit`, use HTMX attributes that declare when to load (`hx-trigger="load"`), or server-rendered HTML that arrives ready. No client-side initialization sequence.
 
 **Enforced by** honest-check HC-P011, statically, at the gate.
 

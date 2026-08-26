@@ -187,7 +187,8 @@ def test_the_source_is_read_from_the_remote_with_its_commit(monkeypatch):
     and can be as stale as the one under test, so checking one against the other
     compares a copy with a copy and passes."""
     seen = []
-    def urlopen(url, timeout=None):
+    def urlopen(req, timeout=None):
+        url = req.full_url if hasattr(req, "full_url") else req
         seen.append(url)
         if "api.github.com" in url:
             return FakeResponse('{"sha": "' + SHA + '", "commit": {}}')
@@ -204,6 +205,36 @@ def test_a_reply_that_is_not_json_is_an_error_not_an_empty_commit(monkeypatch):
     """Read as empty it would compare every copy against nothing and rewrite
     them all to blank on the next sync."""
     monkeypatch.setattr(vc.urllib.request, "urlopen",
-                        lambda url, timeout=None: FakeResponse("<html>429</html>"))
+                        lambda req, timeout=None: FakeResponse("<html>429</html>"))
     with pytest.raises(ValueError):
         vc.source_now()
+
+
+def test_a_token_in_the_environment_is_used(monkeypatch):
+    """Unauthenticated GitHub allows sixty requests an hour per address and
+    this makes two per check. CI shares one address across jobs, so the checks
+    there fail as could-not-verify: the right answer for the wrong reason.
+    Actions always sets GITHUB_TOKEN."""
+    monkeypatch.setenv("GITHUB_TOKEN", "t0ken")
+    seen = {}
+    def urlopen(req, timeout=None):
+        seen.update(req.headers)
+        return FakeResponse("body")
+    monkeypatch.setattr(vc.urllib.request, "urlopen", urlopen)
+    vc.fetch("https://example.invalid/x")
+    assert seen.get("Authorization") == "Bearer t0ken"
+
+
+def test_no_token_means_an_anonymous_request(monkeypatch):
+    """A public file needs no credentials, and demanding one to check a public
+    document would put a secret in the path of a rule anyone should be able to
+    verify for themselves."""
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    seen = {}
+    def urlopen(req, timeout=None):
+        seen.update(req.headers)
+        return FakeResponse("body")
+    monkeypatch.setattr(vc.urllib.request, "urlopen", urlopen)
+    vc.fetch("https://example.invalid/x")
+    assert "Authorization" not in seen
