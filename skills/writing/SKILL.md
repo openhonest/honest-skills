@@ -75,6 +75,12 @@ It exists because a sitrep is a written report someone scans later, and a scanne
 
 `sitrep` also only runs when the user asks for one by name. It used to fire on "status," "what happened," "investigate" and on any screenshot, which meant most conversation came out in report format.
 
+## When these rules reach a running session
+
+A hook picks up new code the moment it lands on disk, because a hook is a subprocess and the file is read every time it fires. A skill does not. The session was handed the skill list and its descriptions at start, and the description is what decides when a skill fires, so changing it reaches nobody already running. The text itself goes into context on first use and stays there.
+
+So a session keeps the skills it started with until it re-reads them or restarts. The write hook now says so: the first time it fires after a skill file changes, it names which ones moved. That is all the hook can do, because it can see the disk and cannot see anybody's context.
+
 ## What a machine checks, and what it does not
 
 `tools/clarity.py` catches the mechanical part: sentence length, stray em dashes, hedges, `load-bearing`, `the X thing`, self-labelling, and a second negation in one message. Run it before sending anything longer than a few lines.

@@ -223,3 +223,21 @@ def test_every_claim_kind_the_docstring_names_has_a_pattern():
     named = {"unqualified negative", "completion", "absolute", "safety"}
     assert named <= set(claims.CLAIMS), \
         f"named in the docstring, absent from CLAIMS: {named - set(claims.CLAIMS)}"
+
+
+def test_the_skill_drift_check_cannot_take_the_hook_down(monkeypatch):
+    """The third advisory to ride inside the hook that reports real findings.
+    The first one, the freshness check, took the whole hook down with it when it
+    raised, and a note about staleness stopped a real defect reaching a writer.
+    Each new advisory gets the same test, here rather than beside the code, so
+    that adding a fourth without the guard fails."""
+    edit_check = load("edit_check")
+    monkeypatch.setattr(edit_check, "stale_note", lambda: "")
+    monkeypatch.setattr(edit_check, "principles_note", lambda *a: "")
+    monkeypatch.setattr(edit_check, "skill_drift_note",
+                        lambda *a: (_ for _ in ()).throw(RuntimeError("broken")))
+    out = edit_check.render("x.py", [{"verdict": "OUT_OF_SPEC",
+                                      "indicator": "L1.21",
+                                      "detail": "a real finding",
+                                      "action": "fix it"}])
+    assert "a real finding" in out

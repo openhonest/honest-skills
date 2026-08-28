@@ -72,7 +72,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pending import (defer, drop, entries, read_state,  # noqa: E402
                      session_key, stranded, write_state)
+import trace_hook  # noqa: E402
 from freshness import principles_note  # noqa: E402
+from skill_drift import note as skill_drift_note  # noqa: E402
 from trace_hook import note_session, stale_note, trace  # noqa: E402
 
 # The vendored principles, beside this file in the installed plugin. Resolved
@@ -648,7 +650,12 @@ def advisories(now: float | None = None) -> list[str]:
     now = time.time() if now is None else now
     out = []
     for name, get in (("stale_note", stale_note),
-                      ("principles_note", lambda: principles_note(SKILL_FILE))):
+                      ("principles_note", lambda: principles_note(SKILL_FILE)),
+                      # trace_hook.SESSION rather than a value captured at
+                      # import: note_session sets it when the hook fires, and
+                      # an import-time read would always see the empty string.
+                      ("skill_drift",
+                       lambda: skill_drift_note(trace_hook.SESSION or ""))):
         try:
             note = get()
         except Exception as e:                    # noqa: BLE001
