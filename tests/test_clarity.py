@@ -833,3 +833,63 @@ def test_an_unterminated_quoted_block_skips_to_the_end(tmp_path):
     is transient, and while it lasts silence beats a wrong number."""
     text = clarity.without_quoted("mine\n<!-- BEGIN VENDORED x @ a -->\ntheirs\nmore\n")
     assert "theirs" not in text and "more" not in text and "mine" in text
+
+
+# --- the wrappers and self-labels Adam banned on 2026-08-28 -------------------
+
+@pytest.mark.parametrize("text", [
+    "That is the honest way to do it.",
+    "That is the real thing here.",
+    "The key insight is that it runs.",
+    "The verdict is clear.",
+    "Worth stating: the tests pass.",
+    "Worth noting: it fails on Tuesdays.",
+    "The important thing here is the timing.",
+    "What matters here is the order.",
+    "This is the load-bearing constraint.",
+])
+def test_a_wrapper_or_a_self_label_is_a_tell(text, tmp_path):
+    """Each one wraps an outcome instead of stating it, or announces a sentence
+    instead of writing it."""
+    f = tmp_path / "d.md"; f.write_text(text + "\n")
+    got = clarity.analyse_paths([str(f)], None)["files"][0]
+    assert got["checks"]["tells"]["count"] >= 1, text
+
+
+@pytest.mark.parametrize("text", [
+    "The fastest way to check is to run it.",
+    "That is the only way in.",
+    "I found the thing that broke it.",
+    "That is the right answer.",
+    "The whole point of the gate is to refuse.",
+])
+def test_an_ordinary_sentence_about_ways_and_things_is_not_a_tell(text, tmp_path):
+    """A checker that fires on the noun rather than the wrapper gets turned off.
+    "The only way in" is a fact about the building. The adjective list is short
+    on purpose: an exact answer over a subset beats a guess over everything."""
+    f = tmp_path / "d.md"; f.write_text(text + "\n")
+    got = clarity.analyse_paths([str(f)], None)["files"][0]
+    assert got["checks"]["tells"]["count"] == 0, text
+
+
+@pytest.mark.parametrize("text", [
+    "We built it the Honest way.",
+    "The Honest answer is in the spec.",
+    "That is the Honest thing to do here.",
+])
+def test_the_capitalised_brand_is_not_a_tell(text, tmp_path):
+    """Adam's methodology is called Honest, so "the Honest way" is a proper
+    noun naming a method. "The honest way" is a verdict wearing a description.
+    Everything else in this file is compared case-insensitively; this one word
+    is not, which is what tells the two apart."""
+    f = tmp_path / "d.md"; f.write_text(text + "\n")
+    got = clarity.analyse_paths([str(f)], None)["files"][0]
+    assert got["checks"]["tells"]["count"] == 0, text
+
+
+def test_the_lowercase_wrapper_still_fires_beside_it(tmp_path):
+    """The exemption must not swallow the rule it is an exemption to."""
+    f = tmp_path / "d.md"
+    f.write_text("We built it the Honest way, which is the honest way to work.\n")
+    got = clarity.analyse_paths([str(f)], None)["files"][0]
+    assert got["checks"]["tells"]["count"] == 1

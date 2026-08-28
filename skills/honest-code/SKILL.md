@@ -45,20 +45,11 @@ Two of the nineteen are only partly decidable and one is not decidable at all. S
 
 ## The rules
 
-The text below is the Honest Code principles, held here rather than fetched,
-because a skill that must go and read a file pays that cost on every invocation
-and the step that costs something is the step that gets skipped.
+The text below is the Honest Code principles, held here rather than fetched, because a skill that must go and read a file pays that cost on every invocation and the step that costs something is the step that gets skipped.
 
-It is a copy, and copies drift: these principles once lived in twelve places
-holding twenty-two versions between them, with no copy holding them all. So this
-one cannot go stale without stopping a push. `tools/vendor_check.py` compares it
-against the source on GitHub before every push of this repository and refuses
-the push when they differ, or when it cannot check.
+It is a copy, and copies drift: these principles once lived in twelve places holding twenty-two versions between them, with no copy holding them all. So this one cannot go stale without stopping a push. `tools/vendor_check.py` compares it against the source on GitHub before every push of this repository and refuses the push when they differ, or when it cannot check.
 
-The commit it was taken from is recorded in the block. Read it against
-https://github.com/openhonest/honest-code-principles if you want to confirm it
-yourself. A released copy is a snapshot: the source can move the day after a
-release, and the recorded commit is how you tell.
+The commit it was taken from is recorded in the block. Read it against https://github.com/openhonest/honest-code-principles if you want to confirm it yourself. A released copy is a snapshot: the source can move the day after a release, and the recorded commit is how you tell.
 
 <!-- BEGIN VENDORED honest-code-principles.md @ 5a0ce96d009615ce328dc02bbc968f42772b9098 -->
 # Honest Code: Coding Principles
@@ -236,3 +227,7 @@ Fix what you can. Where a violation cannot be fixed without breaking an external
 It does not add abstraction that nothing needs. It does not refactor code that already complies. It does not apply a rule where a framework forbids the alternative, and Django models and React components are the usual cases. It does not flag ordinary conditional logic as a dispatch violation.
 
 And it does not claim the linter's verdict as its own. `honest-check` decides what it decides; this skill reports the rest and names what neither of them looked at.
+
+## How to write it
+
+Follow the `writing` skill. It governs every reply and every document here, and this file does not restate it, because a rule stated in five places becomes five rules that drift apart.

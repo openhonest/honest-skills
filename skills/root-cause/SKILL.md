@@ -137,3 +137,7 @@ Run `tools/clarity.py` on the draft before sending. It prints your first sentenc
 - Calling a merely-*present* implementation the root when it is a changeable candidate, signalled by a fix that copes rather than cures, or a surprising quantity left unexamined.
 - Trusting one instrument past its horizon: accepting its output as the link without naming what it is blind to and reaching for a lens that sees there.
 - Finding one root and stopping when a second (the persistence/propagation cause) is also present.
+
+## How to write it
+
+Follow the `writing` skill. It governs every reply and every document here, and this file does not restate it, because a rule stated in five places becomes five rules that drift apart.

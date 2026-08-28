@@ -55,3 +55,7 @@ It flags unqualified negatives, completion claims with no evidence beside them, 
 Whether the evidence supports the claim. Whether the command you ran was the right command. Whether the scope you named was the scope that mattered. Whether the second opinion was independent.
 
 Those are the whole of the work and no checker reaches them, which is why they are printed under every verdict and never gated.
+
+## How to write it
+
+Follow the `writing` skill. It governs every reply and every document here, and this file does not restate it, because a rule stated in five places becomes five rules that drift apart.

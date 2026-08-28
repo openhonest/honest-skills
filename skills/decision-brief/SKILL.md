@@ -102,3 +102,7 @@ Nothing automates those. The checker names them so their absence stays visible r
 A brief that buries the ask, prices no alternative, and never states what happens if the reader ignores it is not a decision request. It is a status update wearing one, and the reader is being asked to reconstruct the decision themselves from material arranged for the writer's convenience.
 
 Structural completeness is not agreement. A brief can pass every check here and still recommend the wrong thing, which is why the checker prints what it did not examine underneath every verdict it did reach.
+
+## How to write it
+
+Follow the `writing` skill. It governs every reply and every document here, and this file does not restate it, because a rule stated in five places becomes five rules that drift apart.

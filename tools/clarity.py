@@ -68,7 +68,30 @@ INTENSIFIERS = ("very", "really", "quite", "extremely", "incredibly",
 # Filler that announces a point instead of making it.
 TELLS = (r"the (honest|useful|interesting|real|hard|important|key) part\b",
          r"this is the part", r"here is the part", r"load-bearing",
-         r"\bit'?s not (just )?about\b", r"\bnot only\b.{0,40}\bbut also\b")
+         r"\bit'?s not (just )?about\b", r"\bnot only\b.{0,40}\bbut also\b",
+         # Added 2026-08-28, from Adam's writing rules. Each one wraps an
+         # outcome instead of stating it, or announces a sentence instead of
+         # writing it.
+         # Named adjectives rather than any word. "The fastest way to check"
+         # is a method and belongs; "the honest way" is a verdict wearing one.
+         # A list catches a subset exactly, where \w+ caught everything badly.
+         # "only", "whole" and "right" came out again: "the only way in" is a
+         # fact about the building. Six adjectives left, each of which reads as
+         # a verdict rather than a description.
+         # "honest" is matched case-sensitively here, alone among the six.
+         # Everything in this file is compared with re.I, and (?-i:...) turns
+         # that off for one word. "The honest way" is a verdict wearing a
+         # description. "The Honest way" is Adam's branded methodology and is
+         # a proper noun, so it stays.
+         r"\bthe ((?-i:honest)|real|actual|useful|interesting|key) "
+         r"(way|thing|point|answer)\b",
+         r"\bthis is the (load-bearing|honest|real|actual) \w+",
+         # "Worth noting:" as a preamble is the tell. "An absence is worth
+         # saying only alongside a presence" is a rule about what deserves
+         # stating, and fired until this was anchored to sentence-initial.
+         r"(?:^|[.!?]\s+)worth (stating|noting|saying)\b",
+         r"\b(key insight|the verdict is|"
+         r"the (important|interesting) thing (here )?is|what matters here is)\b")
 
 # Words ending in -ly that are nouns or adjectives, so they may take a hyphen.
 # Used by the -ly rule below. Incomplete by construction; see the comment there.
