@@ -303,10 +303,28 @@ def coverage_gap(clauses: list[dict]) -> int:
 
     An undecided clause with no kind is counted as a gap. A reader that cannot
     tell should say it did not look rather than assume it did.
+
+    Two more reasons joined the excused list on 2026-08-28, after the
+    unmeasured count reached a quarter of everything written and the cause
+    turned out to be the same two clauses on every Python file.
+
+    "nothing to read" comes from One Gherkin Per Function on a file with no
+    feature files beside it. "decided over the repository" comes from
+    References Resolve Statically, which is a repository-level rule a
+    single-file check cannot answer. Neither is a failure to look. Counted as
+    gaps, they marked every Python file as not measured, including files at 100
+    per cent conformity, and a file that reached 100 fell out of the fixed
+    column at the moment it got there.
+
+    The list is strings the analyzer chooses, so it will go stale the day audit
+    adds a fourth reason, and it will go stale in the flattering direction by
+    counting a real gap as excused. That is the wrong direction for this rule
+    and it is why the list is short and named rather than pattern-matched.
     """
+    excused = {"not applicable", "never", "nothing to read",
+               "decided over the repository"}
     return sum(1 for c in clauses
-               if not c.get("decided") and c.get("undecided") != "not applicable"
-               and c.get("undecided") != "never")
+               if not c.get("decided") and c.get("undecided") not in excused)
 
 
 # The keys this hook reads out of the analyzer's per-file response. audit

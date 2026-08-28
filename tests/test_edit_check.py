@@ -1556,3 +1556,44 @@ def test_markdown_with_no_wrap_reaching_the_settled_path_is_silent(tmp_path):
     f = tmp_path / "n.md"
     f.write_text("One paragraph on one line, however long it happens to run.\n")
     assert edit_check.assess(str(f), "md-sweep") is None
+
+
+# --- what counts as a gap in coverage, and what does not ---------------------
+
+@pytest.mark.parametrize("reason", [
+    "not applicable",
+    "never",
+    "nothing to read",
+    "decided over the repository",
+])
+def test_a_rule_that_cannot_apply_to_one_file_is_not_a_coverage_gap(reason):
+    """None of these is a failure to look.
+
+    The last two were counted as gaps until 2026-08-28, when the unmeasured
+    count reached a quarter of everything written. One Gherkin Per Function
+    says "nothing to read" on a file with no feature files beside it.
+    References Resolve Statically says "decided over the repository" because it
+    is a repository-level rule a single-file check cannot answer. Between them
+    they marked every Python file as not measured, including files at 100 per
+    cent conformity, and a file that reached 100 fell out of the fixed column
+    at the moment it got there."""
+    assert edit_check.coverage_gap([{"decided": False, "undecided": reason}]) == 0
+
+
+@pytest.mark.parametrize("reason", ["unreadable", "parse error", ""])
+def test_a_clause_that_could_not_read_the_file_is_still_a_gap(reason):
+    """The excused list must not swallow the rule it is an exception to. A
+    reader that cannot tell says it did not look rather than assuming it did,
+    so an undecided clause with no reason counts as a gap."""
+    assert edit_check.coverage_gap([{"decided": False, "undecided": reason}]) == 1
+
+
+def test_a_file_where_every_applicable_clause_passed_is_conforming(tmp_path):
+    """The cost of the old arithmetic, stated as a test. A file at 100 per cent
+    with only inapplicable rules left over is a pass, not a measurement gap."""
+    _passing = {"clauses": [
+        {"code": "L1.21.1", "decided": True, "findings": []},
+        {"code": "L1.21.15", "decided": False, "undecided": "nothing to read"},
+        {"code": "L1.21.21", "decided": False, "undecided": "decided over the repository"},
+    ], "decided_clauses": 1, "conformity": 100.0, "band": "Healthy"}
+    assert edit_check.coverage_gap(_passing["clauses"]) == 0
