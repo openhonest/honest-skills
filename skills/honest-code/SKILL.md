@@ -51,7 +51,7 @@ It is a copy, and copies drift: these principles once lived in twelve places hol
 
 The commit it was taken from is recorded in the block. Read it against https://github.com/openhonest/honest-code-principles if you want to confirm it yourself. A released copy is a snapshot: the source can move the day after a release, and the recorded commit is how you tell.
 
-<!-- BEGIN VENDORED honest-code-principles.md @ 5a0ce96d009615ce328dc02bbc968f42772b9098 -->
+<!-- BEGIN VENDORED honest-code-principles.md @ 46f095980619e884f63e90410dc9841db2ba2587 -->
 # Honest Code: Coding Principles
 
 Every principle names a category of defect and removes it. A practice that does not eliminate a named category of bug is a style preference, and does not belong here.
@@ -153,6 +153,15 @@ Instead of `self._config` set in `__init__`, pass `config: dict` as an argument 
 
 **Enforced by** honest-check HC-P007 and HC-P004's global-read clause, statically, at the gate.
 
+## Trust the Contract in the Interior
+A function that re-checks what its own signature already promised has added a branch nothing can reach. `if not isinstance(x, int)` inside `def f(x: int)` guards against a caller the declaration has already excluded, so in a correct program the branch is dead, and in an incorrect one it fires where the type checker should have. Guard clauses spread through business logic do this at scale: every one adds a path, none can be exercised by a caller honouring the contract, and the untested region of the function grows with each check added in the name of safety.
+
+The cost is not the wasted comparison. It is that the signature stops being believed. Once a declared constraint is re-tested inside, a reader cannot tell which constraints the code depends on and a caller cannot tell what it is actually required to satisfy, so the contract degrades into documentation.
+
+Validate declaratively at the boundary, once, where untrusted input arrives, and let the interior take the contract as given. Count a defensive check in the interior as a violation rather than as robustness. It is distrust of your own contracts, and it prices as untestable code.
+
+**Nothing enforces this.** No rule in honest-check reads a redundant interior check. HC-P005 is the nearest and it is a different claim: it catches a hand-written validation duplicating a constraint declared elsewhere, where this catches a function declining to trust a constraint it was handed.
+
 ## No Implicit Defaults
 `def f(x, timeout=30)` silently absorbs the caller's omission. Afterwards the program cannot distinguish a caller who chose thirty seconds from one who forgot, and the non-default region is invisible at every call site, so nothing exercises it. A default is catch-and-swallow applied to inputs, and it manufactures an untested input region by construction.
 
@@ -194,6 +203,15 @@ A missing test, a test that asserts nothing, and a test whose subject no longer 
 Every function carries exactly one gherkin scenario naming it. The rule is a bijection, and the point of a bijection is that the two sets reconcile mechanically: a function with no scenario is code nothing describes, and a scenario with no function describes code that does not exist. The counts having to match is what makes all three obvious. Step-definition length is the secondary signal: thirty lines of setup means the code under test has hidden dependencies, and when the function is pure the step is call it and check the result.
 
 **Enforced by** `feature-gate.sh`, which reconciles the function names in a module against the scenario subjects in its features and fails on any difference in either direction. honest-check catalogues HC-P009 for the same rule and does not emit it.
+
+## Watch the Test Fail First
+A test written after the code passes on its first run, and a test that has never failed has never been shown capable of failing. An assertion that is always true, a scenario whose setup already guarantees the result, and a test calling a function that cannot break look exactly like a test that works. The suite is green in every case, and green is the only thing anyone reads.
+
+Write the scenario, run it, and watch it fail for the reason you expect before writing the code that satisfies it. The failure is the evidence: it is the one moment the test demonstrates it can detect the absence of the thing. A failure for the wrong reason, an import error rather than an assertion error, is the same as no failure at all and means the test is not yet pointed at the behaviour.
+
+This is the ordering rule that makes One Gherkin Per Function worth having. The bijection proves a scenario exists for every function; the red run proves the scenario would notice if the function stopped working. Neither is sufficient alone, and a suite with the first and not the second reconciles perfectly while testing nothing.
+
+**Nothing enforces this, and nothing can.** The evidence is destroyed by the act of passing. A test that failed and now passes is byte-identical to a test that never failed, so no checker reading the final state can tell them apart. Every other principle here is visible in the artifact; this one is visible only while it is happening. It is written down because a discipline nobody can verify is the first one to be skipped quietly, and the second half of that sentence is the reason to say so rather than leave it implied.
 
 ## Declarative Equivalents Over Framework Lifecycle Hooks
 Lifecycle hooks are an initialisation order you cannot see. `componentDidMount`, `useEffect` cleanup and `ngOnInit` each run at a moment the framework picks, so the sequence lives in the framework's documentation instead of your file, and two hooks that must happen in an order have no way to say so.
