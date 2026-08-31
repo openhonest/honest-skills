@@ -191,7 +191,7 @@ def test_the_source_is_read_from_the_remote_with_its_commit(monkeypatch):
         url = req.full_url if hasattr(req, "full_url") else req
         seen.append(url)
         if "api.github.com" in url:
-            return FakeResponse('{"sha": "' + SHA + '", "commit": {}}')
+            return FakeResponse('[{"sha": "' + SHA + '", "commit": {}}]')
         return FakeResponse(BODY + "\n\n")
     monkeypatch.setattr(vc.urllib.request, "urlopen", urlopen)
     body, sha = vc.source_now()
@@ -306,3 +306,25 @@ def test_a_second_file_with_no_dangling_citation_is_passed_over(
     source(monkeypatch)
     assert run(monkeypatch, tmp_path) == 1
     assert "Gone" in capsys.readouterr().err
+
+
+def test_the_source_commit_tracks_the_file_not_the_repository_head():
+    """Regression, 2026-08-30. Pinned to the head, commit 4670cf6 edited only
+    README.md and vendor_check refused the push, reporting drift against a copy
+    whose text was byte-identical. hooks/freshness.py held the same defect and
+    nagged every running session at the same time. One cause, two sites, so the
+    test names the cause: neither may ask for the head of the repository."""
+    assert "path=honest-code-principles.md" in vc.API_URL
+    assert "/commits/main" not in vc.API_URL
+
+
+def test_an_empty_commit_list_is_an_error_not_a_silent_pass(monkeypatch):
+    """An empty list means the file was renamed or deleted upstream. Read as a
+    pass, the guard would go quiet exactly when the source vanished."""
+    monkeypatch.setattr(vc, "fetch", lambda url: "[]")
+    try:
+        vc.source_now()
+    except LookupError as e:
+        assert "renamed or removed" in str(e)
+    else:
+        raise AssertionError("an empty commit list was accepted")

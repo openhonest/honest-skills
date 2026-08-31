@@ -38,8 +38,14 @@ import sys
 import time
 from pathlib import Path
 
-API_URL = ("https://api.github.com/repos/openhonest/"
-           "honest-code-principles/commits/main")
+# Asks for the last commit that touched the principles FILE, not the head of
+# the repository. Pinned to the head, any commit at all marked every installed
+# copy stale: on 2026-08-30 commit 4670cf6 edited only README.md, the principles
+# text was byte-identical, and the hook told every session to update a plugin
+# that was already current. A copy that reports stale when nothing it holds has
+# changed is a copy whose staleness line people learn to skip.
+API_URL = ("https://api.github.com/repos/openhonest/honest-code-principles"
+           "/commits?path=honest-code-principles.md&per_page=1")
 EVERY = 24 * 60 * 60          # a day; the text moves in commits, not in minutes
 # After this long with no successful check, the copy stops being unverified and
 # starts being unmonitored. A rate limit clears within the hour. A renamed
@@ -111,7 +117,13 @@ def refresh(now: float) -> dict:
     try:
         import urllib.request
         with urllib.request.urlopen(API_URL, timeout=TIMEOUT) as r:
-            state["source_sha"] = json.load(r)["sha"]
+            commits = json.load(r)
+        # A list endpoint, so an empty list means the path is gone: a rename or
+        # a deletion upstream. That is a real failure and is recorded as one,
+        # rather than read as "no change" the way an empty result would be.
+        if not commits:
+            raise LookupError("no commits found for honest-code-principles.md")
+        state["source_sha"] = commits[0]["sha"]
         state["verified_at"] = now
     except Exception as e:                        # noqa: BLE001
         # Every failure is the same fact here: no answer. Narrowing this to a

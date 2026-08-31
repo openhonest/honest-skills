@@ -51,8 +51,15 @@ from pathlib import Path
 
 SOURCE_URL = ("https://raw.githubusercontent.com/openhonest/"
               "honest-code-principles/main/honest-code-principles.md")
-API_URL = ("https://api.github.com/repos/openhonest/"
-           "honest-code-principles/commits/main")
+# The last commit that touched the principles FILE, not the head of the
+# repository. Pinned to the head, a commit that edits only the README reports
+# the vendored copy as drifted and refuses the push, while the text it holds is
+# byte-identical. That happened on 2026-08-30 with commit 4670cf6. The same
+# defect sat in hooks/freshness.py, which is why both were fixed together: a
+# check that fires when nothing it checks has changed teaches people to bypass
+# it, and a bypassed check is worse than no check.
+API_URL = ("https://api.github.com/repos/openhonest/honest-code-principles"
+           "/commits?path=honest-code-principles.md&per_page=1")
 BEGIN = "<!-- BEGIN VENDORED honest-code-principles.md"
 END = "<!-- END VENDORED -->"
 TIMEOUT = 20
@@ -114,7 +121,11 @@ def fetch(url: str) -> str:
 def source_now() -> tuple[str, str]:
     """The canonical text and the commit it is at, from the remote."""
     import json
-    head = json.loads(fetch(API_URL))["sha"]
+    commits = json.loads(fetch(API_URL))
+    if not commits:
+        raise LookupError("no commits found for honest-code-principles.md; "
+                          "the file was renamed or removed upstream")
+    head = commits[0]["sha"]
     return fetch(SOURCE_URL).rstrip("\n"), head
 
 

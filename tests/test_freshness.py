@@ -151,7 +151,7 @@ def test_the_refresh_records_the_commit_it_was_told(tmp_path, monkeypatch):
     class R:
         def __enter__(self): return self
         def __exit__(self, *a): return False
-        def read(self): return json.dumps({"sha": THEIRS}).encode()
+        def read(self): return json.dumps([{"sha": THEIRS}]).encode()
     monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout=None: R())
     assert fresh.refresh(1000.0)["source_sha"] == THEIRS
 
@@ -164,7 +164,7 @@ def test_a_cache_that_cannot_be_written_does_not_break_the_turn(
     class R:
         def __enter__(self): return self
         def __exit__(self, *a): return False
-        def read(self): return json.dumps({"sha": THEIRS}).encode()
+        def read(self): return json.dumps([{"sha": THEIRS}]).encode()
     monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout=None: R())
     monkeypatch.setattr(Path, "write_text",
                         lambda self, *a, **k: (_ for _ in ()).throw(OSError("ro")))
@@ -272,7 +272,7 @@ def test_a_good_check_clears_the_previous_error(tmp_path, monkeypatch):
     class R:
         def __enter__(self): return self
         def __exit__(self, *a): return False
-        def read(self): return json.dumps({"sha": THEIRS}).encode()
+        def read(self): return json.dumps([{"sha": THEIRS}]).encode()
     monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: R())
     state = fresh.refresh(1000.0)
     assert "error" not in state and state["verified_at"] == 1000.0
@@ -332,3 +332,30 @@ def test_age_is_measured_from_the_last_success_not_the_last_attempt(
           verified_at=now - 10 * 86400, source_sha=MINE,  # last worked ten days back
           error="URLError: timed out")
     assert "unmonitored" in fresh.principles_note(skill(tmp_path), now)
+
+
+def test_a_commit_that_did_not_touch_the_principles_is_not_a_change(
+        tmp_path, monkeypatch):
+    """Regression, 2026-08-30. The check asked GitHub for the head of the
+    repository, so commit 4670cf6, which edited only README.md, made every
+    installed copy report itself stale while the principles text it held was
+    byte-identical. The URL now asks for the last commit that touched the
+    principles file, so a README edit is invisible here, which is correct."""
+    assert "path=honest-code-principles.md" in fresh.API_URL
+    assert "/commits/main" not in fresh.API_URL
+
+
+def test_a_path_that_returns_nothing_is_an_error_not_a_pass(
+        tmp_path, monkeypatch):
+    """An empty list means the file was renamed or deleted upstream. Read as
+    "no change" that would silently freeze the check forever."""
+    monkeypatch.setenv("HONEST_PENDING_DIR", str(tmp_path / "state"))
+    import urllib.request
+    class R:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def read(self): return json.dumps([]).encode()
+    monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout=None: R())
+    state = fresh.refresh(1000.0)
+    assert "LookupError" in state["error"]
+    assert "source_sha" not in state
